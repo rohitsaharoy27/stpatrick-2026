@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lucky Drop Invite</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="hud">
+        <div class="hud-item">⏱️ <span id="timeLeft">90</span>s</div>
+        <div class="hud-item">✅ <span id="caughtCount">0</span></div>
+        <div class="hud-item">🧩 <span id="remainingCount">0</span></div>
+      </header>
+
+      <section class="address-panel" aria-live="polite">
+        <h1>Catch one of each falling address letter!</h1>
+        <p id="addressMasked" class="address-masked"></p>
+      </section>
+
+      <section class="game-wrap">
+        <canvas id="game" width="360" height="640" aria-label="Letter catcher game"></canvas>
+        <p class="help">Move the clover cart with your finger, mouse, or arrow keys.</p>
+      </section>
+
+      <div id="overlay" class="overlay hidden">
+        <div class="overlay-card">
+          <div id="tequilaRain" class="tequila-rain" aria-hidden="true"></div>
+          <h2 id="overlayTitle"></h2>
+          <div id="winArt" class="win-art hidden" aria-hidden="true">🍯🌈🍀</div>
+          <p id="overlayText"></p>
+          <button id="restartButton">Play Again</button>
+        </div>
+      </div>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>
