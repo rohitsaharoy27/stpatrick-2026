@@ -2,6 +2,8 @@ const INVITE_TEXT = "518 W 27TH ST · MUSIC FOR A WHILE";
 const WIN_MESSAGE = "get ready to party w rohit soon at music for a while : ) ";
 
 const OBSTACLE_WIDTH = 72;
+const OBSTACLE_HITBOX_WIDTH = 46;
+const POT_RADIUS = 19;
 const BASE_GAP_HEIGHT = 188;
 const MIN_GAP_HEIGHT = 142;
 const BASE_SPEED = 132;
@@ -14,6 +16,25 @@ const DECOR_EMOJIS = ["🍀", "✨", "🌈", "🎶", "🎉", "💚", "🪙", "�
 const CELEBRATION_EMOJIS = ["🍀", "✨", "🌈", "🎉", "🎶", "🪩", "💚"];
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const NUMBERS = "0123456789";
+const MUSIC_STEP_SECONDS = 0.24;
+const FESTIVE_PATTERN = [
+  { lead: 76, bass: 52 },
+  { lead: 79, bass: 52 },
+  { lead: 81, bass: 55 },
+  { lead: 79, bass: 55 },
+  { lead: 76, bass: 57 },
+  { lead: 79, bass: 57 },
+  { lead: 83, bass: 59 },
+  { lead: 81, bass: 59 },
+  { lead: 79, bass: 52 },
+  { lead: 81, bass: 52 },
+  { lead: 83, bass: 55 },
+  { lead: 84, bass: 55 },
+  { lead: 83, bass: 57 },
+  { lead: 81, bass: 57 },
+  { lead: 79, bass: 55 },
+  { lead: 76, bass: 52 },
+];
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -55,8 +76,93 @@ const state = {
   frameMs: 0,
 };
 
+const musicState = {
+  context: null,
+  masterGain: null,
+  started: false,
+  step: 0,
+  nextTime: 0,
+  timerId: null,
+};
+
 function randomBetween(min, max) {
   return min + Math.random() * (max - min);
+}
+
+function midiToFrequency(midi) {
+  return 440 * 2 ** ((midi - 69) / 12);
+}
+
+function ensureMusicGraph() {
+  if (musicState.context) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  musicState.context = new AudioContextClass();
+  musicState.masterGain = musicState.context.createGain();
+  musicState.masterGain.gain.value = 0.075;
+  musicState.masterGain.connect(musicState.context.destination);
+}
+
+function scheduleTone(midi, startAt, duration, type, volume) {
+  if (!musicState.context || !musicState.masterGain) return;
+
+  const osc = musicState.context.createOscillator();
+  const gain = musicState.context.createGain();
+  const filter = musicState.context.createBiquadFilter();
+
+  osc.type = type;
+  osc.frequency.setValueAtTime(midiToFrequency(midi), startAt);
+
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(type === "sine" ? 760 : 1950, startAt);
+
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.linearRampToValueAtTime(volume, startAt + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(musicState.masterGain);
+
+  osc.start(startAt);
+  osc.stop(startAt + duration + 0.05);
+}
+
+function scheduleFestiveLoop() {
+  if (!musicState.context || !musicState.started) return;
+
+  const lookAheadSeconds = 0.7;
+  while (musicState.nextTime < musicState.context.currentTime + lookAheadSeconds) {
+    const stepPattern = FESTIVE_PATTERN[musicState.step % FESTIVE_PATTERN.length];
+    scheduleTone(stepPattern.bass, musicState.nextTime, MUSIC_STEP_SECONDS * 0.92, "sine", 0.045);
+    scheduleTone(stepPattern.lead, musicState.nextTime, MUSIC_STEP_SECONDS * 0.86, "triangle", 0.055);
+
+    if (musicState.step % 2 === 0) {
+      scheduleTone(stepPattern.lead + 12, musicState.nextTime, MUSIC_STEP_SECONDS * 0.5, "square", 0.018);
+    }
+
+    musicState.step += 1;
+    musicState.nextTime += MUSIC_STEP_SECONDS;
+  }
+
+  musicState.timerId = window.setTimeout(scheduleFestiveLoop, 120);
+}
+
+function startFestiveMusic() {
+  ensureMusicGraph();
+  if (!musicState.context || !musicState.masterGain) return;
+
+  if (musicState.context.state === "suspended") {
+    musicState.context.resume();
+  }
+
+  if (musicState.started) return;
+
+  musicState.started = true;
+  musicState.step = 0;
+  musicState.nextTime = musicState.context.currentTime + 0.05;
+  scheduleFestiveLoop();
 }
 
 function isRevealable(char) {
@@ -167,6 +273,13 @@ function circleRectCollision(cx, cy, radius, rx, ry, rw, rh) {
   return dx * dx + dy * dy <= radius * radius;
 }
 
+function circleCircleCollision(x1, y1, r1, x2, y2, r2) {
+  const dx = x1 - x2;
+  const dy = y1 - y2;
+  const maxDistance = r1 + r2;
+  return dx * dx + dy * dy <= maxDistance * maxDistance;
+}
+
 function createTequilaRain() {
   tequilaRain.innerHTML = "";
   for (let i = 0; i < 18; i += 1) {
@@ -263,29 +376,48 @@ function update(dt) {
   for (let i = state.obstacles.length - 1; i >= 0; i -= 1) {
     const obstacle = state.obstacles[i];
     obstacle.x -= speed * dt;
+    const hitboxX = obstacle.x + (OBSTACLE_WIDTH - OBSTACLE_HITBOX_WIDTH) / 2;
+    const bottomY = obstacle.gapTop + obstacle.gapHeight;
 
     const topCollision = circleRectCollision(
       state.clover.x,
       state.clover.y,
       hitRadius,
-      obstacle.x,
+      hitboxX,
       0,
-      OBSTACLE_WIDTH,
+      OBSTACLE_HITBOX_WIDTH,
       obstacle.gapTop,
     );
 
-    const bottomY = obstacle.gapTop + obstacle.gapHeight;
     const bottomCollision = circleRectCollision(
       state.clover.x,
       state.clover.y,
       hitRadius,
-      obstacle.x,
+      hitboxX,
       bottomY,
-      OBSTACLE_WIDTH,
+      OBSTACLE_HITBOX_WIDTH,
       canvas.height - bottomY,
     );
 
-    if (topCollision || bottomCollision) {
+    const topPotCollision = circleCircleCollision(
+      state.clover.x,
+      state.clover.y,
+      hitRadius,
+      obstacle.x + OBSTACLE_WIDTH / 2,
+      obstacle.gapTop - 9,
+      POT_RADIUS,
+    );
+
+    const bottomPotCollision = circleCircleCollision(
+      state.clover.x,
+      state.clover.y,
+      hitRadius,
+      obstacle.x + OBSTACLE_WIDTH / 2,
+      bottomY + 9,
+      POT_RADIUS,
+    );
+
+    if (topCollision || bottomCollision || topPotCollision || bottomPotCollision) {
       finishGame(false);
       return;
     }
@@ -308,11 +440,17 @@ function update(dt) {
 
 function drawBackground(nowMs) {
   const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  sky.addColorStop(0, "#0a4f55");
-  sky.addColorStop(0.52, "#156f6b");
-  sky.addColorStop(1, "#0a2f3f");
+  sky.addColorStop(0, "#062c15");
+  sky.addColorStop(0.46, "#0f5a2c");
+  sky.addColorStop(1, "#08361e");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const glow = ctx.createRadialGradient(canvas.width * 0.78, 72, 12, canvas.width * 0.78, 72, 190);
+  glow.addColorStop(0, "rgba(255, 224, 128, 0.32)");
+  glow.addColorStop(1, "rgba(255, 224, 128, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, canvas.width, canvas.height * 0.45);
 
   for (const orb of backdropOrbs) {
     const driftX = Math.sin(nowMs * 0.00035 * orb.drift + orb.phase) * 12;
@@ -325,17 +463,62 @@ function drawBackground(nowMs) {
       orb.y + driftY,
       orb.r,
     );
-    orbGradient.addColorStop(0, "rgba(255, 255, 255, 0.15)");
+    orbGradient.addColorStop(0, "rgba(255, 239, 171, 0.16)");
     orbGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
     ctx.fillStyle = orbGradient;
     ctx.fillRect(orb.x - orb.r + driftX, orb.y - orb.r + driftY, orb.r * 2, orb.r * 2);
   }
 
-  ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
-  for (let y = 46; y < canvas.height; y += 66) {
-    const wobble = Math.sin(nowMs * 0.0015 + y * 0.02) * 4;
-    ctx.fillRect(0, y + wobble, canvas.width, 1.4);
+  ctx.fillStyle = "rgba(9, 61, 30, 0.72)";
+  ctx.beginPath();
+  ctx.moveTo(0, canvas.height);
+  ctx.lineTo(0, canvas.height * 0.78);
+  ctx.bezierCurveTo(
+    canvas.width * 0.22,
+    canvas.height * 0.71,
+    canvas.width * 0.45,
+    canvas.height * 0.86,
+    canvas.width * 0.66,
+    canvas.height * 0.76,
+  );
+  ctx.bezierCurveTo(canvas.width * 0.82, canvas.height * 0.7, canvas.width * 0.93, canvas.height * 0.75, canvas.width, canvas.height * 0.72);
+  ctx.lineTo(canvas.width, canvas.height);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(17, 84, 42, 0.85)";
+  ctx.beginPath();
+  ctx.moveTo(0, canvas.height);
+  ctx.lineTo(0, canvas.height * 0.86);
+  ctx.bezierCurveTo(
+    canvas.width * 0.2,
+    canvas.height * 0.8,
+    canvas.width * 0.52,
+    canvas.height * 0.92,
+    canvas.width * 0.72,
+    canvas.height * 0.83,
+  );
+  ctx.bezierCurveTo(canvas.width * 0.88, canvas.height * 0.77, canvas.width * 0.94, canvas.height * 0.84, canvas.width, canvas.height * 0.81);
+  ctx.lineTo(canvas.width, canvas.height);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255, 243, 196, 0.08)";
+  for (let y = 54; y < canvas.height * 0.72; y += 66) {
+    const wobble = Math.sin(nowMs * 0.00135 + y * 0.018) * 4;
+    ctx.fillRect(0, y + wobble, canvas.width, 1.2);
   }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = '16px "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+  for (let i = 0; i < 8; i += 1) {
+    const x = 32 + i * 44 + Math.sin(nowMs * 0.0008 + i) * 7;
+    const y = 84 + (i % 3) * 66 + Math.cos(nowMs * 0.0011 + i * 0.5) * 10;
+    ctx.globalAlpha = 0.11;
+    ctx.fillText("☘", x, y);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawDecorDrops() {
@@ -353,36 +536,77 @@ function drawDecorDrops() {
   }
 }
 
-function drawGateBlock(x, y, width, height, hue) {
-  if (height <= 0) return;
+function drawRainbowStream(centerX, startY, endY, hueShift) {
+  if (endY <= startY) return;
 
-  const bodyGradient = ctx.createLinearGradient(x, y, x + width, y);
-  bodyGradient.addColorStop(0, `hsl(${hue}, 88%, 48%)`);
-  bodyGradient.addColorStop(0.5, `hsl(${Math.max(hue - 16, 0)}, 94%, 63%)`);
-  bodyGradient.addColorStop(1, `hsl(${Math.max(hue - 38, 0)}, 85%, 36%)`);
+  const rainbowOffsets = [0, 22, 46, 96, 140, 186];
+  const baseWidth = OBSTACLE_HITBOX_WIDTH + 12;
+  const streamHeight = endY - startY;
 
-  ctx.fillStyle = bodyGradient;
-  ctx.fillRect(x, y, width, height);
+  ctx.save();
+  ctx.lineCap = "round";
 
-  ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
-  ctx.fillRect(x + 7, y + 6, width - 14, Math.max(4, Math.min(8, height - 10)));
+  for (let i = 0; i < rainbowOffsets.length; i += 1) {
+    const wobble = Math.sin(state.frameMs * 0.0018 + i * 0.72 + centerX * 0.04) * 4.4;
+    ctx.strokeStyle = `hsla(${(hueShift + rainbowOffsets[i]) % 360}, 92%, 58%, 0.9)`;
+    ctx.lineWidth = Math.max(baseWidth - i * 4.2, 4);
+    ctx.beginPath();
+    ctx.moveTo(centerX, startY);
+    ctx.bezierCurveTo(
+      centerX + wobble,
+      startY + streamHeight * 0.34,
+      centerX - wobble,
+      endY - streamHeight * 0.34,
+      centerX,
+      endY,
+    );
+    ctx.stroke();
+  }
 
-  ctx.strokeStyle = "rgba(8, 30, 30, 0.52)";
-  ctx.lineWidth = 2.8;
-  ctx.strokeRect(x + 1.5, y + 1.5, width - 3, height - 3);
+  ctx.restore();
+}
+
+function drawPotOfGold(centerX, centerY) {
+  const potWidth = 44;
+  const potHeight = 24;
+  const left = centerX - potWidth / 2;
+  const top = centerY - potHeight / 2;
+
+  ctx.fillStyle = "#f7b500";
+  for (let i = 0; i < 7; i += 1) {
+    const coinX = left + 7 + i * 5.2;
+    const coinY = top + (i % 2 === 0 ? -4 : -2);
+    ctx.beginPath();
+    ctx.arc(coinX, coinY, 4.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const potGradient = ctx.createLinearGradient(left, top + 4, left + potWidth, top + potHeight);
+  potGradient.addColorStop(0, "#343a40");
+  potGradient.addColorStop(1, "#111318");
+  ctx.fillStyle = potGradient;
+  ctx.fillRect(left + 2, top + 4, potWidth - 4, potHeight - 6);
+
+  ctx.fillStyle = "#4a5058";
+  ctx.fillRect(left + 6, top + 10, potWidth - 12, potHeight - 12);
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+  ctx.fillRect(left + 5, top + 6, potWidth - 10, 2.5);
+
+  ctx.strokeStyle = "rgba(8, 14, 18, 0.64)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(left + 1.5, top + 3, potWidth - 3, potHeight - 5);
 }
 
 function drawObstacle(obstacle) {
-  const topHeight = obstacle.gapTop;
-  const bottomY = obstacle.gapTop + obstacle.gapHeight;
-  const bottomHeight = canvas.height - bottomY;
+  const centerX = obstacle.x + OBSTACLE_WIDTH / 2;
+  const topPotY = obstacle.gapTop - 9;
+  const bottomPotY = obstacle.gapTop + obstacle.gapHeight + 9;
 
-  drawGateBlock(obstacle.x, 0, OBSTACLE_WIDTH, topHeight, obstacle.hue);
-  drawGateBlock(obstacle.x, bottomY, OBSTACLE_WIDTH, bottomHeight, obstacle.hue);
-
-  ctx.fillStyle = "rgba(255, 247, 199, 0.8)";
-  ctx.fillRect(obstacle.x - 5, Math.max(0, topHeight - 12), OBSTACLE_WIDTH + 10, 12);
-  ctx.fillRect(obstacle.x - 5, bottomY, OBSTACLE_WIDTH + 10, 12);
+  drawRainbowStream(centerX, 0, topPotY - POT_RADIUS * 0.45, obstacle.hue);
+  drawRainbowStream(centerX, bottomPotY + POT_RADIUS * 0.45, canvas.height, obstacle.hue + 40);
+  drawPotOfGold(centerX, topPotY);
+  drawPotOfGold(centerX, bottomPotY);
 }
 
 function drawClover(nowMs) {
@@ -485,6 +709,7 @@ function loop(nowMs) {
 
 function handlePrimaryInput(event) {
   event.preventDefault();
+  startFestiveMusic();
   flap();
 }
 
@@ -492,6 +717,7 @@ window.addEventListener("keydown", (event) => {
   if (event.repeat) return;
   if (event.code === "Space" || event.key === "ArrowUp") {
     event.preventDefault();
+    startFestiveMusic();
     flap();
   }
 });
@@ -503,7 +729,10 @@ if (window.PointerEvent) {
   canvas.addEventListener("touchstart", handlePrimaryInput, { passive: false });
 }
 
-restartButton.addEventListener("click", resetGame);
+restartButton.addEventListener("click", () => {
+  startFestiveMusic();
+  resetGame();
+});
 
 resetGame();
 requestAnimationFrame(loop);
