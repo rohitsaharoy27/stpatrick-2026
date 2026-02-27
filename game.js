@@ -1,5 +1,6 @@
 const ADDRESS = "518 W 27th St";
 const TIME_LIMIT = 90;
+const FALLING_EMOJIS = ["🍀", "🌈", "🎉", "🥳", "✨", "🎶", "💚", "🪙", "🍺", "💃"];
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -17,7 +18,7 @@ const tequilaRain = document.getElementById("tequilaRain");
 const TARGET_CHARS = [...new Set(ADDRESS.toUpperCase().replace(/[^A-Z0-9]/g, "").split(""))];
 
 const state = {
-  player: { x: canvas.width / 2 - 40, y: canvas.height - 58, w: 80, h: 22, speed: 6 },
+  player: { x: canvas.width / 2 - 47, y: canvas.height - 66, w: 94, h: 34, speed: 6 },
   drops: [],
   caughtSet: new Set(),
   timeLeft: TIME_LIMIT,
@@ -64,21 +65,37 @@ function resetGame() {
   updateHud();
 }
 
-function randomFallChar() {
+function randomDropToken() {
   const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  if (Math.random() < 0.72) {
-    return TARGET_CHARS[Math.floor(Math.random() * TARGET_CHARS.length)];
+  if (Math.random() < 0.24) {
+    return {
+      value: FALLING_EMOJIS[Math.floor(Math.random() * FALLING_EMOJIS.length)],
+      isEmoji: true,
+    };
   }
-  return charset[Math.floor(Math.random() * charset.length)];
+
+  if (TARGET_CHARS.length && Math.random() < 0.68) {
+    return {
+      value: TARGET_CHARS[Math.floor(Math.random() * TARGET_CHARS.length)],
+      isEmoji: false,
+    };
+  }
+
+  return {
+    value: charset[Math.floor(Math.random() * charset.length)],
+    isEmoji: false,
+  };
 }
 
 function spawnDrop() {
+  const token = randomDropToken();
   state.drops.push({
     x: 16 + Math.random() * (canvas.width - 32),
     y: -16,
     speed: 1.7 + Math.random() * 2.2,
-    letter: randomFallChar(),
-    size: 22,
+    letter: token.value,
+    isEmoji: token.isEmoji,
+    size: token.isEmoji ? 24 : 22,
   });
 }
 
@@ -86,7 +103,7 @@ function catchDrop(index) {
   const drop = state.drops[index];
   state.drops.splice(index, 1);
 
-  if (TARGET_CHARS.includes(drop.letter)) {
+  if (!drop.isEmoji && TARGET_CHARS.includes(drop.letter)) {
     state.caughtSet.add(drop.letter);
   }
 
@@ -114,7 +131,7 @@ function finishGame(won) {
 
   if (won) {
     overlayTitle.textContent = "Congratulations!";
-    overlayText.textContent = "get ready to party w rohit at music for a while : )";
+    overlayText.textContent = "get ready to party w rohit soon at music for a while : ) ";
     winArt.classList.remove("hidden");
     createTequilaRain();
   } else {
@@ -125,25 +142,39 @@ function finishGame(won) {
 }
 
 function drawLetterDrop(drop) {
+  const tileSize = drop.isEmoji ? 28 : 24;
   ctx.fillStyle = "#0f172a";
-  ctx.fillRect(drop.x - 12, drop.y - 12, 24, 24);
-  ctx.fillStyle = TARGET_CHARS.includes(drop.letter) ? "#ffd43b" : "#d1d5db";
-  ctx.fillRect(drop.x - 10, drop.y - 10, 20, 20);
+  ctx.fillRect(drop.x - tileSize / 2, drop.y - tileSize / 2, tileSize, tileSize);
+  ctx.fillStyle = drop.isEmoji ? "#fff8db" : TARGET_CHARS.includes(drop.letter) ? "#ffd43b" : "#d1d5db";
+  ctx.fillRect(drop.x - tileSize / 2 + 2, drop.y - tileSize / 2 + 2, tileSize - 4, tileSize - 4);
   ctx.fillStyle = "#111827";
-  ctx.font = "bold 14px 'Courier New', monospace";
+  ctx.font = drop.isEmoji
+    ? "18px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif"
+    : "bold 14px 'Courier New', monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(drop.letter, drop.x, drop.y + 1);
+  ctx.fillText(drop.letter, drop.x, drop.y + (drop.isEmoji ? 0 : 1));
 }
 
 function drawPlayer() {
   const p = state.player;
-  ctx.fillStyle = "#081c15";
-  ctx.fillRect(p.x, p.y, p.w, p.h);
-  ctx.fillStyle = "#2b9348";
-  ctx.fillRect(p.x + 4, p.y + 4, p.w - 8, p.h - 8);
-  ctx.fillStyle = "#95d5b2";
-  ctx.fillRect(p.x + p.w / 2 - 7, p.y - 8, 14, 8);
+  const coinY = p.y + 2;
+  const rimY = p.y + 10;
+  const bodyY = p.y + 14;
+
+  ctx.fillStyle = "#f59f00";
+  for (let i = 0; i < 7; i += 1) {
+    ctx.fillRect(p.x + 10 + i * 11, coinY + (i % 2 === 0 ? 0 : 2), 8, 6);
+  }
+  ctx.fillRect(p.x + 8, rimY, p.w - 16, 8);
+
+  ctx.fillStyle = "#212529";
+  ctx.fillRect(p.x + 10, bodyY, p.w - 20, p.h - 12);
+  ctx.fillStyle = "#343a40";
+  ctx.fillRect(p.x + 14, bodyY + 4, p.w - 28, p.h - 16);
+  ctx.fillStyle = "#495057";
+  ctx.fillRect(p.x + 4, bodyY + 8, 6, 10);
+  ctx.fillRect(p.x + p.w - 10, bodyY + 8, 6, 10);
 }
 
 function update(deltaMs) {
