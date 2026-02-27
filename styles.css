@@ -4,7 +4,6 @@
   --accent: #ffd43b;
   --accent-2: #ffec99;
   --text: #f8fff4;
-  --danger: #ff6b6b;
   --pixel: "Courier New", "Lucida Console", monospace;
 }
 
@@ -72,7 +71,7 @@ canvas {
   margin: 0;
   letter-spacing: 0.08em;
   line-height: 1.4;
-  min-height: 3.2em;
+  min-height: 2.8em;
   font-size: 1.05rem;
   color: var(--accent-2);
 }
@@ -111,6 +110,8 @@ canvas {
 }
 
 .overlay-card {
+  position: relative;
+  overflow: hidden;
   width: min(100%, 360px);
   background: #275c35;
   padding: 18px;
@@ -119,6 +120,40 @@ canvas {
 
 .overlay-card h2 {
   margin-top: 0;
+}
+
+.win-art {
+  font-size: 2rem;
+  margin: 8px 0;
+}
+
+.tequila-rain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.shot {
+  position: absolute;
+  top: -10%;
+  font-size: 1.1rem;
+  animation-name: shot-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes shot-fall {
+  0% {
+    transform: translateY(-10%) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(430px) rotate(18deg);
+    opacity: 0;
+  }
 }
 
 button {

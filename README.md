@@ -2,20 +2,21 @@
 
 A lightweight mobile-friendly pixel-style game for your St. Patrick's Day party invite.
 
-Players catch falling gold coins to reveal one character at a time of the party address. The full address can be unlocked in under 2 minutes.
+Players catch falling letters to reveal `518 W 27th St`. They must catch one of each unique letter/number in the address before time runs out.
 
 ## How it works
 
 - Timer: 90 seconds
-- Every 5 coins reveals 1 new character
-- Win condition: reveal all address characters before time runs out
+- Falling tiles are random letters/numbers
+- Catching a needed character reveals all matching spots in the address
+- Win condition: reveal the full address before time runs out
+- Win screen includes a pot-of-gold celebration and tequila shots falling from the sky
 
 ## Customize for your party
 
 Open `game.js` and update:
 
 - `ADDRESS` with your real party address
-- `REVEAL_COST` if you want it easier/harder
 - `TIME_LIMIT` for game length
 
 ## Run locally
