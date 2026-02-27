@@ -1,16 +1,16 @@
 const INVITE_TEXT = "518 W 27TH ST · MUSIC FOR A WHILE";
 const WIN_MESSAGE = "get ready to party w rohit soon at music for a while : ) ";
 
-const OBSTACLE_WIDTH = 72;
-const OBSTACLE_HITBOX_WIDTH = 46;
-const POT_RADIUS = 19;
-const BASE_GAP_HEIGHT = 188;
-const MIN_GAP_HEIGHT = 142;
-const BASE_SPEED = 132;
-const MAX_SPEED = 208;
-const GRAVITY = 980;
-const FLAP_VELOCITY = -350;
+const BASE_SPEED = 210;
+const MAX_SPEED = 360;
+const GRAVITY = 1850;
+const JUMP_VELOCITY = -620;
 const DECOR_MAX = 26;
+const GROUND_TOP = 542;
+const GROUND_HEIGHT = 98;
+const CLOVER_RADIUS = 24;
+const POT_RADIUS_MIN = 20;
+const POT_RADIUS_MAX = 28;
 
 const DECOR_EMOJIS = ["🍀", "✨", "🌈", "🎶", "🎉", "💚", "🪙", "🥳"];
 const CELEBRATION_EMOJIS = ["🍀", "✨", "🌈", "🎉", "🎶", "🪩", "💚"];
@@ -18,22 +18,22 @@ const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const NUMBERS = "0123456789";
 const MUSIC_STEP_SECONDS = 0.24;
 const FESTIVE_PATTERN = [
-  { lead: 76, bass: 52 },
-  { lead: 79, bass: 52 },
-  { lead: 81, bass: 55 },
-  { lead: 79, bass: 55 },
-  { lead: 76, bass: 57 },
-  { lead: 79, bass: 57 },
-  { lead: 83, bass: 59 },
-  { lead: 81, bass: 59 },
   { lead: 79, bass: 52 },
   { lead: 81, bass: 52 },
   { lead: 83, bass: 55 },
-  { lead: 84, bass: 55 },
-  { lead: 83, bass: 57 },
+  { lead: 81, bass: 55 },
+  { lead: 79, bass: 57 },
   { lead: 81, bass: 57 },
-  { lead: 79, bass: 55 },
-  { lead: 76, bass: 52 },
+  { lead: 84, bass: 59 },
+  { lead: 83, bass: 59 },
+  { lead: 81, bass: 52 },
+  { lead: 83, bass: 52 },
+  { lead: 84, bass: 55 },
+  { lead: 86, bass: 55 },
+  { lead: 84, bass: 57 },
+  { lead: 83, bass: 57 },
+  { lead: 81, bass: 55 },
+  { lead: 79, bass: 52 },
 ];
 
 const canvas = document.getElementById("game");
@@ -49,12 +49,12 @@ const restartButton = document.getElementById("restartButton");
 const winArt = document.getElementById("winArt");
 const tequilaRain = document.getElementById("tequilaRain");
 
-const backdropOrbs = Array.from({ length: 9 }, (_, index) => ({
-  x: 36 + Math.random() * (canvas.width - 72),
-  y: 26 + Math.random() * (canvas.height - 200),
-  r: 22 + Math.random() * 72,
-  drift: 0.22 + Math.random() * 0.45,
-  phase: index * 0.7 + Math.random(),
+const backdropOrbs = Array.from({ length: 10 }, (_, index) => ({
+  x: 34 + Math.random() * (canvas.width - 68),
+  y: 26 + Math.random() * (canvas.height - 240),
+  r: 26 + Math.random() * 82,
+  drift: 0.25 + Math.random() * 0.45,
+  phase: index * 0.61 + Math.random(),
 }));
 
 const REVEALABLE_TOTAL = [...INVITE_TEXT].reduce(
@@ -63,8 +63,14 @@ const REVEALABLE_TOTAL = [...INVITE_TEXT].reduce(
 );
 
 const state = {
-  clover: { x: 98, y: canvas.height * 0.45, r: 22, vy: 0 },
-  obstacles: [],
+  clover: {
+    x: 94,
+    y: GROUND_TOP - CLOVER_RADIUS,
+    r: CLOVER_RADIUS,
+    vy: 0,
+    onGround: true,
+  },
+  pots: [],
   decorDrops: [],
   running: true,
   started: false,
@@ -100,11 +106,11 @@ function ensureMusicGraph() {
 
   musicState.context = new AudioContextClass();
   musicState.masterGain = musicState.context.createGain();
-  musicState.masterGain.gain.value = 0.075;
+  musicState.masterGain.gain.value = 0.2;
   musicState.masterGain.connect(musicState.context.destination);
 }
 
-function scheduleTone(midi, startAt, duration, type, volume) {
+function scheduleTone(midi, startAt, duration, type, volume, lowpass = 2000) {
   if (!musicState.context || !musicState.masterGain) return;
 
   const osc = musicState.context.createOscillator();
@@ -113,33 +119,59 @@ function scheduleTone(midi, startAt, duration, type, volume) {
 
   osc.type = type;
   osc.frequency.setValueAtTime(midiToFrequency(midi), startAt);
-
   filter.type = "lowpass";
-  filter.frequency.setValueAtTime(type === "sine" ? 760 : 1950, startAt);
+  filter.frequency.setValueAtTime(lowpass, startAt);
 
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.linearRampToValueAtTime(volume, startAt + 0.018);
+  gain.gain.linearRampToValueAtTime(volume, startAt + 0.016);
   gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
 
   osc.connect(filter);
   filter.connect(gain);
   gain.connect(musicState.masterGain);
-
   osc.start(startAt);
-  osc.stop(startAt + duration + 0.05);
+  osc.stop(startAt + duration + 0.04);
+}
+
+function playSfxJump() {
+  if (!musicState.context) return;
+  const now = musicState.context.currentTime;
+  scheduleTone(88, now, 0.12, "square", 0.13, 2800);
+  scheduleTone(93, now + 0.08, 0.12, "triangle", 0.08, 2400);
+}
+
+function playSfxPass() {
+  if (!musicState.context) return;
+  const now = musicState.context.currentTime;
+  scheduleTone(91, now, 0.1, "triangle", 0.11, 2600);
+}
+
+function playSfxCrash() {
+  if (!musicState.context) return;
+  const now = musicState.context.currentTime;
+  scheduleTone(46, now, 0.2, "sawtooth", 0.14, 900);
+}
+
+function playSfxWin() {
+  if (!musicState.context) return;
+  const now = musicState.context.currentTime;
+  const notes = [84, 88, 91, 96];
+  notes.forEach((midi, index) => {
+    scheduleTone(midi, now + index * 0.08, 0.22, "triangle", 0.1, 2600);
+  });
 }
 
 function scheduleFestiveLoop() {
   if (!musicState.context || !musicState.started) return;
 
-  const lookAheadSeconds = 0.7;
+  const lookAheadSeconds = 0.9;
   while (musicState.nextTime < musicState.context.currentTime + lookAheadSeconds) {
     const stepPattern = FESTIVE_PATTERN[musicState.step % FESTIVE_PATTERN.length];
-    scheduleTone(stepPattern.bass, musicState.nextTime, MUSIC_STEP_SECONDS * 0.92, "sine", 0.045);
-    scheduleTone(stepPattern.lead, musicState.nextTime, MUSIC_STEP_SECONDS * 0.86, "triangle", 0.055);
+    scheduleTone(stepPattern.bass, musicState.nextTime, MUSIC_STEP_SECONDS * 0.88, "sine", 0.065, 950);
+    scheduleTone(stepPattern.lead, musicState.nextTime, MUSIC_STEP_SECONDS * 0.82, "triangle", 0.085, 1900);
 
     if (musicState.step % 2 === 0) {
-      scheduleTone(stepPattern.lead + 12, musicState.nextTime, MUSIC_STEP_SECONDS * 0.5, "square", 0.018);
+      scheduleTone(stepPattern.lead + 12, musicState.nextTime, MUSIC_STEP_SECONDS * 0.45, "square", 0.03, 3200);
     }
 
     musicState.step += 1;
@@ -161,7 +193,7 @@ function startFestiveMusic() {
 
   musicState.started = true;
   musicState.step = 0;
-  musicState.nextTime = musicState.context.currentTime + 0.05;
+  musicState.nextTime = musicState.context.currentTime + 0.04;
   scheduleFestiveLoop();
 }
 
@@ -203,54 +235,25 @@ function createDecorDrop(forcedY = null) {
   }
 
   state.decorDrops.push({
-    x: randomBetween(12, canvas.width - 12),
+    x: randomBetween(10, canvas.width - 10),
     y: forcedY ?? randomBetween(-canvas.height, canvas.height),
     token,
-    size: randomBetween(15, 23),
-    speed: randomBetween(22, 46),
-    alpha: randomBetween(0.18, 0.48),
-    drift: randomBetween(0.4, 1.2),
+    size: randomBetween(14, 22),
+    speed: randomBetween(18, 40),
+    alpha: randomBetween(0.2, 0.46),
+    drift: randomBetween(0.35, 1.2),
     spin: randomBetween(-0.8, 0.8),
     rotation: randomBetween(-Math.PI, Math.PI),
   });
 }
 
-function resetGame() {
-  state.clover.x = 98;
-  state.clover.y = canvas.height * 0.45;
-  state.clover.vy = 0;
-  state.obstacles = [];
-  state.decorDrops = [];
-  state.running = true;
-  state.started = false;
-  state.spawnTimer = 0;
-  state.decorTimer = 0;
-  state.revealedCount = 0;
-  state.passedCount = 0;
-  state.frameMs = performance.now();
-
-  for (let i = 0; i < DECOR_MAX; i += 1) {
-    createDecorDrop(randomBetween(-canvas.height, canvas.height));
-  }
-
-  overlay.classList.add("hidden");
-  tequilaRain.innerHTML = "";
-  winArt.classList.add("hidden");
-  restartButton.textContent = "Fly Again";
-  updateHud();
-}
-
-function spawnObstacle() {
-  const gapHeight = Math.max(MIN_GAP_HEIGHT, BASE_GAP_HEIGHT - state.passedCount * 1.25);
-  const margin = 72;
-  const gapTop = randomBetween(margin, canvas.height - gapHeight - margin);
-  const hue = 94 + Math.random() * 58;
-
-  state.obstacles.push({
-    x: canvas.width + OBSTACLE_WIDTH,
-    gapTop,
-    gapHeight,
-    hue,
+function spawnPot() {
+  const radius = randomBetween(POT_RADIUS_MIN, POT_RADIUS_MAX);
+  const y = GROUND_TOP - radius * 0.72;
+  state.pots.push({
+    x: canvas.width + radius + 18,
+    y,
+    r: radius,
     passed: false,
   });
 }
@@ -262,15 +265,6 @@ function revealNextCharacter() {
   if (state.revealedCount >= REVEALABLE_TOTAL) {
     finishGame(true);
   }
-}
-
-function circleRectCollision(cx, cy, radius, rx, ry, rw, rh) {
-  if (rh <= 0 || rw <= 0) return false;
-  const nearestX = Math.max(rx, Math.min(cx, rx + rw));
-  const nearestY = Math.max(ry, Math.min(cy, ry + rh));
-  const dx = cx - nearestX;
-  const dy = cy - nearestY;
-  return dx * dx + dy * dy <= radius * radius;
 }
 
 function circleCircleCollision(x1, y1, r1, x2, y2, r2) {
@@ -287,8 +281,8 @@ function createTequilaRain() {
     shot.className = "shot";
     shot.textContent = CELEBRATION_EMOJIS[Math.floor(Math.random() * CELEBRATION_EMOJIS.length)];
     shot.style.left = `${Math.random() * 100}%`;
-    shot.style.animationDelay = `${Math.random() * 2.2}s`;
-    shot.style.animationDuration = `${1.8 + Math.random() * 1.7}s`;
+    shot.style.animationDelay = `${Math.random() * 2.3}s`;
+    shot.style.animationDuration = `${1.8 + Math.random() * 1.6}s`;
     tequilaRain.appendChild(shot);
   }
 }
@@ -302,42 +296,74 @@ function finishGame(won) {
   overlay.classList.remove("hidden");
 
   if (won) {
-    overlayTitle.textContent = "Congrats, Clover Pilot!";
+    overlayTitle.textContent = "Congrats, Clover Runner!";
     overlayText.textContent = WIN_MESSAGE;
-    winArt.textContent = "🍀😊🌈";
+    winArt.textContent = "🍀😊🏃";
     winArt.classList.remove("hidden");
-    restartButton.textContent = "Play Again";
+    restartButton.textContent = "Run Again";
     createTequilaRain();
+    playSfxWin();
   } else {
-    overlayTitle.textContent = "Clover Bonked a Gate";
-    overlayText.textContent = "Tap Play Again, then keep your rhythm through the gap.";
+    overlayTitle.textContent = "You Hit a Pot of Gold";
+    overlayText.textContent = "Tap Try Again, then time each jump over the pots.";
     winArt.classList.add("hidden");
     tequilaRain.innerHTML = "";
     restartButton.textContent = "Try Again";
+    playSfxCrash();
   }
 }
 
-function flap() {
+function jump() {
   if (!state.running) return;
   if (!state.started) state.started = true;
-  state.clover.vy = FLAP_VELOCITY;
+  if (!state.clover.onGround) return;
+
+  state.clover.vy = JUMP_VELOCITY;
+  state.clover.onGround = false;
+  playSfxJump();
+}
+
+function resetGame() {
+  state.clover.x = 94;
+  state.clover.y = GROUND_TOP - state.clover.r;
+  state.clover.vy = 0;
+  state.clover.onGround = true;
+  state.pots = [];
+  state.decorDrops = [];
+  state.running = true;
+  state.started = false;
+  state.spawnTimer = 0;
+  state.decorTimer = 0;
+  state.revealedCount = 0;
+  state.passedCount = 0;
+  state.frameMs = performance.now();
+
+  for (let i = 0; i < DECOR_MAX; i += 1) {
+    createDecorDrop(randomBetween(-canvas.height, canvas.height));
+  }
+
+  overlay.classList.add("hidden");
+  tequilaRain.innerHTML = "";
+  winArt.classList.add("hidden");
+  restartButton.textContent = "Run Again";
+  updateHud();
 }
 
 function updateDecorDrops(dt) {
   state.decorTimer += dt;
   if (state.decorDrops.length < DECOR_MAX && state.decorTimer > 0.14) {
-    createDecorDrop(-18);
+    createDecorDrop(-16);
     state.decorTimer = 0;
   }
 
   for (const drop of state.decorDrops) {
     drop.y += drop.speed * dt;
-    drop.x += Math.sin((state.frameMs * drop.drift) / 760) * 0.35;
+    drop.x += Math.sin((state.frameMs * drop.drift) / 760) * 0.32;
     drop.rotation += drop.spin * dt;
 
     if (drop.y - drop.size > canvas.height) {
-      drop.y = -drop.size - Math.random() * 80;
-      drop.x = randomBetween(12, canvas.width - 12);
+      drop.y = -drop.size - Math.random() * 90;
+      drop.x = randomBetween(10, canvas.width - 10);
     }
   }
 }
@@ -349,89 +375,63 @@ function update(dt) {
   if (!state.running) return;
 
   if (!state.started) {
-    state.clover.y = canvas.height * 0.45 + Math.sin(state.frameMs / 260) * 4;
+    state.clover.y = GROUND_TOP - state.clover.r + Math.sin(state.frameMs / 280) * 2.3;
     state.clover.vy = 0;
+    state.clover.onGround = true;
     updateHud();
     return;
   }
 
-  const speed = Math.min(MAX_SPEED, BASE_SPEED + state.passedCount * 2.1);
+  const speed = Math.min(MAX_SPEED, BASE_SPEED + state.passedCount * 3.5);
 
   state.spawnTimer += dt;
-  const spawnEvery = Math.max(1.13, 1.68 - state.passedCount * 0.018);
+  const spawnEvery = Math.max(0.78, 1.26 - state.passedCount * 0.015);
   while (state.spawnTimer >= spawnEvery) {
-    spawnObstacle();
+    spawnPot();
     state.spawnTimer -= spawnEvery;
   }
 
   state.clover.vy += GRAVITY * dt;
   state.clover.y += state.clover.vy * dt;
 
-  const hitRadius = state.clover.r * 0.78;
-  if (state.clover.y - hitRadius <= 0 || state.clover.y + hitRadius >= canvas.height) {
-    finishGame(false);
-    return;
+  const floorY = GROUND_TOP - state.clover.r;
+  if (state.clover.y >= floorY) {
+    state.clover.y = floorY;
+    state.clover.vy = 0;
+    state.clover.onGround = true;
+  } else {
+    state.clover.onGround = false;
   }
 
-  for (let i = state.obstacles.length - 1; i >= 0; i -= 1) {
-    const obstacle = state.obstacles[i];
-    obstacle.x -= speed * dt;
-    const hitboxX = obstacle.x + (OBSTACLE_WIDTH - OBSTACLE_HITBOX_WIDTH) / 2;
-    const bottomY = obstacle.gapTop + obstacle.gapHeight;
+  for (let i = state.pots.length - 1; i >= 0; i -= 1) {
+    const pot = state.pots[i];
+    pot.x -= speed * dt;
 
-    const topCollision = circleRectCollision(
+    const collided = circleCircleCollision(
       state.clover.x,
-      state.clover.y,
-      hitRadius,
-      hitboxX,
-      0,
-      OBSTACLE_HITBOX_WIDTH,
-      obstacle.gapTop,
+      state.clover.y + 2,
+      state.clover.r * 0.72,
+      pot.x,
+      pot.y - 2,
+      pot.r * 0.68,
     );
 
-    const bottomCollision = circleRectCollision(
-      state.clover.x,
-      state.clover.y,
-      hitRadius,
-      hitboxX,
-      bottomY,
-      OBSTACLE_HITBOX_WIDTH,
-      canvas.height - bottomY,
-    );
-
-    const topPotCollision = circleCircleCollision(
-      state.clover.x,
-      state.clover.y,
-      hitRadius,
-      obstacle.x + OBSTACLE_WIDTH / 2,
-      obstacle.gapTop - 9,
-      POT_RADIUS,
-    );
-
-    const bottomPotCollision = circleCircleCollision(
-      state.clover.x,
-      state.clover.y,
-      hitRadius,
-      obstacle.x + OBSTACLE_WIDTH / 2,
-      bottomY + 9,
-      POT_RADIUS,
-    );
-
-    if (topCollision || bottomCollision || topPotCollision || bottomPotCollision) {
+    if (collided) {
       finishGame(false);
       return;
     }
 
-    if (!obstacle.passed && obstacle.x + OBSTACLE_WIDTH < state.clover.x - hitRadius) {
-      obstacle.passed = true;
+    if (!pot.passed && pot.x + pot.r < state.clover.x - state.clover.r * 0.65) {
+      pot.passed = true;
       state.passedCount += 1;
       state.bestCount = Math.max(state.bestCount, state.passedCount);
       revealNextCharacter();
+      playSfxPass();
       if (!state.running) return;
     }
 
-    if (obstacle.x + OBSTACLE_WIDTH < -12) {
-      state.obstacles.splice(i, 1);
+    if (pot.x + pot.r < -18) {
+      state.pots.splice(i, 1);
     }
   }
 
@@ -446,14 +446,14 @@ function drawBackground(nowMs) {
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const glow = ctx.createRadialGradient(canvas.width * 0.78, 72, 12, canvas.width * 0.78, 72, 190);
+  const glow = ctx.createRadialGradient(canvas.width * 0.78, 74, 12, canvas.width * 0.78, 74, 190);
   glow.addColorStop(0, "rgba(255, 224, 128, 0.32)");
   glow.addColorStop(1, "rgba(255, 224, 128, 0)");
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, canvas.width, canvas.height * 0.45);
 
   for (const orb of backdropOrbs) {
-    const driftX = Math.sin(nowMs * 0.00035 * orb.drift + orb.phase) * 12;
+    const driftX = Math.sin(nowMs * 0.00034 * orb.drift + orb.phase) * 12;
     const driftY = Math.cos(nowMs * 0.00025 * orb.drift + orb.phase) * 8;
     const orbGradient = ctx.createRadialGradient(
       orb.x + driftX,
@@ -469,40 +469,6 @@ function drawBackground(nowMs) {
     ctx.fillRect(orb.x - orb.r + driftX, orb.y - orb.r + driftY, orb.r * 2, orb.r * 2);
   }
 
-  ctx.fillStyle = "rgba(9, 61, 30, 0.72)";
-  ctx.beginPath();
-  ctx.moveTo(0, canvas.height);
-  ctx.lineTo(0, canvas.height * 0.78);
-  ctx.bezierCurveTo(
-    canvas.width * 0.22,
-    canvas.height * 0.71,
-    canvas.width * 0.45,
-    canvas.height * 0.86,
-    canvas.width * 0.66,
-    canvas.height * 0.76,
-  );
-  ctx.bezierCurveTo(canvas.width * 0.82, canvas.height * 0.7, canvas.width * 0.93, canvas.height * 0.75, canvas.width, canvas.height * 0.72);
-  ctx.lineTo(canvas.width, canvas.height);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "rgba(17, 84, 42, 0.85)";
-  ctx.beginPath();
-  ctx.moveTo(0, canvas.height);
-  ctx.lineTo(0, canvas.height * 0.86);
-  ctx.bezierCurveTo(
-    canvas.width * 0.2,
-    canvas.height * 0.8,
-    canvas.width * 0.52,
-    canvas.height * 0.92,
-    canvas.width * 0.72,
-    canvas.height * 0.83,
-  );
-  ctx.bezierCurveTo(canvas.width * 0.88, canvas.height * 0.77, canvas.width * 0.94, canvas.height * 0.84, canvas.width, canvas.height * 0.81);
-  ctx.lineTo(canvas.width, canvas.height);
-  ctx.closePath();
-  ctx.fill();
-
   ctx.fillStyle = "rgba(255, 243, 196, 0.08)";
   for (let y = 54; y < canvas.height * 0.72; y += 66) {
     const wobble = Math.sin(nowMs * 0.00135 + y * 0.018) * 4;
@@ -513,12 +479,31 @@ function drawBackground(nowMs) {
   ctx.textBaseline = "middle";
   ctx.font = '16px "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
   for (let i = 0; i < 8; i += 1) {
-    const x = 32 + i * 44 + Math.sin(nowMs * 0.0008 + i) * 7;
+    const x = 34 + i * 42 + Math.sin(nowMs * 0.0008 + i) * 7;
     const y = 84 + (i % 3) * 66 + Math.cos(nowMs * 0.0011 + i * 0.5) * 10;
     ctx.globalAlpha = 0.11;
     ctx.fillText("☘", x, y);
   }
   ctx.globalAlpha = 1;
+}
+
+function drawGround(nowMs) {
+  ctx.fillStyle = "#0a5526";
+  ctx.fillRect(0, GROUND_TOP, canvas.width, GROUND_HEIGHT);
+
+  ctx.fillStyle = "#117537";
+  ctx.fillRect(0, GROUND_TOP + 8, canvas.width, 16);
+
+  const stripeShift = (nowMs * 0.16) % 48;
+  for (let x = -48 + stripeShift; x < canvas.width + 60; x += 48) {
+    ctx.fillStyle = "rgba(39, 118, 58, 0.62)";
+    ctx.beginPath();
+    ctx.moveTo(x, GROUND_TOP + 1);
+    ctx.lineTo(x + 24, GROUND_TOP + 1);
+    ctx.lineTo(x + 12, GROUND_TOP + 22);
+    ctx.closePath();
+    ctx.fill();
+  }
 }
 
 function drawDecorDrops() {
@@ -527,7 +512,6 @@ function drawDecorDrops() {
     ctx.translate(drop.x, drop.y);
     ctx.rotate(drop.rotation);
     ctx.globalAlpha = drop.alpha;
-    ctx.fillStyle = "rgba(247, 255, 244, 0.95)";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = `${drop.size}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Courier New", monospace`;
@@ -536,48 +520,19 @@ function drawDecorDrops() {
   }
 }
 
-function drawRainbowStream(centerX, startY, endY, hueShift) {
-  if (endY <= startY) return;
-
-  const rainbowOffsets = [0, 22, 46, 96, 140, 186];
-  const baseWidth = OBSTACLE_HITBOX_WIDTH + 12;
-  const streamHeight = endY - startY;
-
-  ctx.save();
-  ctx.lineCap = "round";
-
-  for (let i = 0; i < rainbowOffsets.length; i += 1) {
-    const wobble = Math.sin(state.frameMs * 0.0018 + i * 0.72 + centerX * 0.04) * 4.4;
-    ctx.strokeStyle = `hsla(${(hueShift + rainbowOffsets[i]) % 360}, 92%, 58%, 0.9)`;
-    ctx.lineWidth = Math.max(baseWidth - i * 4.2, 4);
-    ctx.beginPath();
-    ctx.moveTo(centerX, startY);
-    ctx.bezierCurveTo(
-      centerX + wobble,
-      startY + streamHeight * 0.34,
-      centerX - wobble,
-      endY - streamHeight * 0.34,
-      centerX,
-      endY,
-    );
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-function drawPotOfGold(centerX, centerY) {
-  const potWidth = 44;
-  const potHeight = 24;
-  const left = centerX - potWidth / 2;
-  const top = centerY - potHeight / 2;
+function drawPotOfGold(pot) {
+  const potWidth = pot.r * 2.2;
+  const potHeight = pot.r * 1.25;
+  const left = pot.x - potWidth / 2;
+  const top = pot.y - potHeight / 2;
 
   ctx.fillStyle = "#f7b500";
-  for (let i = 0; i < 7; i += 1) {
-    const coinX = left + 7 + i * 5.2;
-    const coinY = top + (i % 2 === 0 ? -4 : -2);
+  const coinCount = 7;
+  for (let i = 0; i < coinCount; i += 1) {
+    const coinX = left + 6 + i * (potWidth - 12) / (coinCount - 1);
+    const coinY = top + (i % 2 === 0 ? -5 : -2);
     ctx.beginPath();
-    ctx.arc(coinX, coinY, 4.1, 0, Math.PI * 2);
+    ctx.arc(coinX, coinY, 4.2, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -598,32 +553,14 @@ function drawPotOfGold(centerX, centerY) {
   ctx.strokeRect(left + 1.5, top + 3, potWidth - 3, potHeight - 5);
 }
 
-function drawObstacle(obstacle) {
-  const centerX = obstacle.x + OBSTACLE_WIDTH / 2;
-  const topPotY = obstacle.gapTop - 9;
-  const bottomPotY = obstacle.gapTop + obstacle.gapHeight + 9;
-
-  drawRainbowStream(centerX, 0, topPotY - POT_RADIUS * 0.45, obstacle.hue);
-  drawRainbowStream(centerX, bottomPotY + POT_RADIUS * 0.45, canvas.height, obstacle.hue + 40);
-  drawPotOfGold(centerX, topPotY);
-  drawPotOfGold(centerX, bottomPotY);
-}
-
 function drawClover(nowMs) {
   const clover = state.clover;
-  const hover = !state.started ? Math.sin(nowMs / 170) * 1.2 : 0;
-  const angle = Math.max(-0.42, Math.min(0.52, clover.vy / 420));
+  const runSwing = state.clover.onGround && state.started ? Math.sin(nowMs * 0.02) : 0;
+  const angle = state.clover.onGround ? runSwing * 0.1 : Math.max(-0.35, Math.min(0.28, clover.vy / 520));
 
   ctx.save();
-  ctx.translate(clover.x, clover.y + hover);
+  ctx.translate(clover.x, clover.y);
   ctx.rotate(angle);
-
-  ctx.strokeStyle = "#2b8a3e";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(0, clover.r * 0.45);
-  ctx.quadraticCurveTo(6, clover.r + 10, -2, clover.r + 17);
-  ctx.stroke();
 
   const leafRadius = clover.r * 0.58;
   const spread = clover.r * 0.55;
@@ -636,8 +573,8 @@ function drawClover(nowMs) {
 
   for (const [leafX, leafY] of leaves) {
     const leafGradient = ctx.createRadialGradient(leafX - 2, leafY - 4, 3, leafX, leafY, leafRadius);
-    leafGradient.addColorStop(0, "#7ff7a3");
-    leafGradient.addColorStop(1, "#26a152");
+    leafGradient.addColorStop(0, "#8fffad");
+    leafGradient.addColorStop(1, "#22a04f");
     ctx.fillStyle = leafGradient;
     ctx.beginPath();
     ctx.arc(leafX, leafY, leafRadius, 0, Math.PI * 2);
@@ -661,32 +598,44 @@ function drawClover(nowMs) {
   ctx.arc(0, 1.5, 7, 0.18, Math.PI - 0.18);
   ctx.stroke();
 
+  const legLift = state.clover.onGround && state.started ? Math.sin(nowMs * 0.03) * 4 : 0;
+  ctx.strokeStyle = "#1f6a36";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-5, clover.r * 0.75);
+  ctx.lineTo(-7, clover.r + 10 - legLift);
+  ctx.moveTo(5, clover.r * 0.75);
+  ctx.lineTo(8, clover.r + 10 + legLift);
+  ctx.stroke();
+
   ctx.restore();
 }
 
 function drawStartPrompt() {
   if (!state.running || state.started) return;
+
   ctx.fillStyle = "rgba(10, 24, 26, 0.36)";
-  ctx.fillRect(34, canvas.height * 0.36, canvas.width - 68, 88);
+  ctx.fillRect(32, canvas.height * 0.36, canvas.width - 64, 90);
   ctx.strokeStyle = "rgba(250, 255, 235, 0.45)";
   ctx.lineWidth = 2;
-  ctx.strokeRect(34, canvas.height * 0.36, canvas.width - 68, 88);
+  ctx.strokeRect(32, canvas.height * 0.36, canvas.width - 64, 90);
 
   ctx.fillStyle = "#effff0";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = 'bold 22px "Avenir Next", "Trebuchet MS", sans-serif';
-  ctx.fillText("Tap To Start", canvas.width / 2, canvas.height * 0.41);
+  ctx.fillText("Tap To Run", canvas.width / 2, canvas.height * 0.41);
   ctx.font = '14px "Avenir Next", "Trebuchet MS", sans-serif';
-  ctx.fillText("Flap through each gate to unlock the invite", canvas.width / 2, canvas.height * 0.455);
+  ctx.fillText("Jump over every pot of gold to unlock the invite", canvas.width / 2, canvas.height * 0.456);
 }
 
 function draw(nowMs) {
   drawBackground(nowMs);
   drawDecorDrops();
+  drawGround(nowMs);
 
-  for (const obstacle of state.obstacles) {
-    drawObstacle(obstacle);
+  for (const pot of state.pots) {
+    drawPotOfGold(pot);
   }
 
   drawClover(nowMs);
@@ -710,7 +659,7 @@ function loop(nowMs) {
 function handlePrimaryInput(event) {
   event.preventDefault();
   startFestiveMusic();
-  flap();
+  jump();
 }
 
 window.addEventListener("keydown", (event) => {
@@ -718,7 +667,7 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "Space" || event.key === "ArrowUp") {
     event.preventDefault();
     startFestiveMusic();
-    flap();
+    jump();
   }
 });
 
