@@ -1,38 +1,55 @@
 :root {
-  --bg: #0f3b1f;
-  --bg-2: #145429;
-  --accent: #ffd43b;
-  --accent-2: #ffec99;
-  --text: #f8fff4;
-  --pixel: "Courier New", "Lucida Console", monospace;
+  --bg-deep: #021d28;
+  --bg-mid: #0a4d5c;
+  --bg-soft: #128372;
+  --panel: rgba(7, 36, 44, 0.74);
+  --panel-light: rgba(11, 54, 66, 0.78);
+  --line: rgba(210, 255, 220, 0.26);
+  --text: #effff4;
+  --muted: rgba(236, 255, 240, 0.84);
+  --accent: #f5c451;
+  --accent-soft: #ffe5a8;
+  --font-main: "Avenir Next", "Trebuchet MS", "Gill Sans", sans-serif;
+  --font-code: "SFMono-Regular", "Menlo", "Consolas", monospace;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
-  font-family: var(--pixel);
-  background: repeating-linear-gradient(
-    45deg,
-    var(--bg),
-    var(--bg) 8px,
-    var(--bg-2) 8px,
-    var(--bg-2) 16px
-  );
+  min-height: 100dvh;
+  font-family: var(--font-main);
   color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
+  padding: clamp(8px, 2.2vw, 20px);
+  overscroll-behavior: none;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(171, 255, 220, 0.2), transparent 30%),
+    radial-gradient(circle at 82% 10%, rgba(255, 240, 178, 0.2), transparent 32%),
+    linear-gradient(165deg, var(--bg-deep) 0%, var(--bg-mid) 46%, var(--bg-soft) 100%);
 }
 
 .app {
-  width: min(100%, 460px);
+  width: min(100%, 470px);
   display: grid;
-  gap: 12px;
+  gap: 11px;
+  padding: 14px;
+  border-radius: 22px;
+  background: linear-gradient(170deg, var(--panel) 0%, var(--panel-light) 100%);
+  border: 1px solid var(--line);
+  box-shadow:
+    0 26px 44px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(6px);
 }
 
 .hud {
@@ -41,39 +58,41 @@ body {
   gap: 8px;
 }
 
-.hud-item,
-.address-panel,
-.help,
-.overlay-card,
-canvas {
-  border: 3px solid #000;
-  box-shadow: 4px 4px 0 #000;
-}
-
 .hud-item {
   text-align: center;
   padding: 8px 4px;
-  background: #1d6b33;
-  font-size: 0.95rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(6, 39, 49, 0.76);
+  font-size: 0.91rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .address-panel {
-  background: #245d35;
-  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(8, 47, 58, 0.76);
+  padding: 10px 11px;
 }
 
 .address-panel h1 {
-  margin: 0 0 8px;
+  margin: 0 0 7px;
   font-size: 1rem;
+  line-height: 1.25;
+  color: var(--muted);
+  font-weight: 650;
 }
 
 .address-masked {
   margin: 0;
+  font-family: var(--font-code);
   letter-spacing: 0.08em;
   line-height: 1.4;
   min-height: 2.8em;
-  font-size: 1.05rem;
-  color: var(--accent-2);
+  font-size: 1.03rem;
+  color: var(--accent-soft);
+  word-break: break-word;
 }
 
 .game-wrap {
@@ -84,21 +103,36 @@ canvas {
 canvas {
   width: 100%;
   height: auto;
-  background: linear-gradient(180deg, #2f9e44 0%, #1b4332 100%);
+  aspect-ratio: 9 / 16;
+  max-height: min(68vh, 640px);
+  border-radius: 18px;
+  border: 2px solid rgba(214, 255, 225, 0.34);
+  box-shadow:
+    0 18px 34px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.11);
+  background: #0b4f53;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .help {
   margin: 0;
-  padding: 8px;
-  font-size: 0.85rem;
-  background: #1d6b33;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(7, 41, 52, 0.8);
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-align: center;
 }
 
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.68);
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -112,19 +146,30 @@ canvas {
 .overlay-card {
   position: relative;
   overflow: hidden;
-  width: min(100%, 360px);
-  background: #275c35;
+  width: min(100%, 370px);
+  border-radius: 18px;
+  background: linear-gradient(170deg, #0e3f4a 0%, #0a2932 100%);
+  border: 1px solid rgba(225, 255, 233, 0.28);
+  box-shadow:
+    0 22px 32px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   padding: 18px;
   text-align: center;
 }
 
 .overlay-card h2 {
-  margin-top: 0;
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+}
+
+.overlay-card p {
+  margin: 0 0 14px;
+  color: var(--muted);
 }
 
 .win-art {
-  font-size: 2rem;
-  margin: 8px 0;
+  font-size: 2.15rem;
+  margin: 4px 0 10px;
 }
 
 .tequila-rain {
@@ -136,7 +181,7 @@ canvas {
 .shot {
   position: absolute;
   top: -10%;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
   animation-name: shot-fall;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
@@ -147,36 +192,68 @@ canvas {
     transform: translateY(-10%) rotate(0deg);
     opacity: 0;
   }
-  15% {
+  14% {
     opacity: 1;
   }
   100% {
-    transform: translateY(430px) rotate(18deg);
+    transform: translateY(460px) rotate(22deg);
     opacity: 0;
   }
 }
 
 button {
-  background: var(--accent);
-  border: 3px solid #000;
-  box-shadow: 3px 3px 0 #000;
-  padding: 8px 12px;
-  font-family: var(--pixel);
-  font-weight: bold;
+  border: none;
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-family: var(--font-main);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0a2d2a;
+  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--accent) 100%);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
   cursor: pointer;
 }
 
 button:active {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0 #000;
+  transform: translateY(1px);
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
+  body {
+    padding: 8px;
+  }
+
+  .app {
+    gap: 8px;
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .hud-item {
+    font-size: 0.82rem;
+    padding: 7px 3px;
+  }
+
   .address-panel h1 {
     font-size: 0.9rem;
   }
 
   .address-masked {
-    font-size: 0.95rem;
+    font-size: 0.92rem;
+  }
+
+  .help {
+    font-size: 0.79rem;
+  }
+}
+
+@media (max-height: 760px) {
+  .app {
+    gap: 7px;
+    padding: 9px;
+  }
+
+  canvas {
+    max-height: 56vh;
   }
 }

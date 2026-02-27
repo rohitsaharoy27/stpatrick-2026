@@ -3,25 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Lucky Drop Invite</title>
+    <title>Clover Flight Invite</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="app">
       <header class="hud">
-        <div class="hud-item">⏱️ <span id="timeLeft">90</span>s</div>
-        <div class="hud-item">✅ <span id="caughtCount">0</span></div>
-        <div class="hud-item">🧩 <span id="remainingCount">0</span></div>
+        <div class="hud-item">🪽 Passed <span id="passedCount">0</span></div>
+        <div class="hud-item">🔓 Left <span id="remainingCount">0</span></div>
+        <div class="hud-item">🌟 Best <span id="bestCount">0</span></div>
       </header>
 
       <section class="address-panel" aria-live="polite">
-        <h1>Catch one of each address letter while emojis and random symbols rain down!</h1>
+        <h1>Tap to flap through rainbow gates. Each gate unlocks one letter.</h1>
         <p id="addressMasked" class="address-masked"></p>
       </section>
 
       <section class="game-wrap">
-        <canvas id="game" width="360" height="640" aria-label="Letter catcher game"></canvas>
-        <p class="help">Move the pot of gold with your finger, mouse, or arrow keys.</p>
+        <canvas id="game" width="360" height="640" aria-label="Clover flappy game"></canvas>
+        <p class="help">Tap anywhere to flap. Keyboard: Space or ↑.</p>
       </section>
 
       <div id="overlay" class="overlay hidden">
