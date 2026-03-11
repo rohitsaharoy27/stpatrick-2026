@@ -1,21 +1,26 @@
 const INVITE_TEXT = "518 W 27TH ST · MUSIC FOR A WHILE";
 const WIN_MESSAGE = "get ready to party w rohit soon at music for a while : ) ";
 
-const BASE_SPEED = 210;
-const MAX_SPEED = 360;
-const GRAVITY = 1850;
-const JUMP_VELOCITY = -620;
-const DECOR_MAX = 26;
-const GROUND_TOP = 542;
-const GROUND_HEIGHT = 98;
-const CLOVER_RADIUS = 24;
-const POT_RADIUS_MIN = 20;
-const POT_RADIUS_MAX = 28;
+const PATH_WIDTH = 176;
+const PATH_MARGIN = 84;
+const PLAYER_Y = 488;
+const TRACK_SHIFT = 78;
+const TURN_ZONE_TOP = PLAYER_Y - 120;
+const TURN_ZONE_BOTTOM = PLAYER_Y + 26;
 
+const BASE_SPEED = 164;
+const MAX_SPEED = 260;
+const TURN_INTERVAL_MIN = 1.18;
+const TURN_INTERVAL_MAX = 1.9;
+const FALL_GRAVITY = 1680;
+const FALL_SPIN = 3.4;
+
+const DECOR_MAX = 24;
 const DECOR_EMOJIS = ["🍀", "✨", "🌈", "🎶", "🎉", "💚", "🪙", "🥳"];
 const CELEBRATION_EMOJIS = ["🍀", "✨", "🌈", "🎉", "🎶", "🪩", "💚"];
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const NUMBERS = "0123456789";
+
 const MUSIC_STEP_SECONDS = 0.24;
 const FESTIVE_PATTERN = [
   { lead: 79, bass: 52 },
@@ -51,8 +56,8 @@ const tequilaRain = document.getElementById("tequilaRain");
 
 const backdropOrbs = Array.from({ length: 10 }, (_, index) => ({
   x: 34 + Math.random() * (canvas.width - 68),
-  y: 26 + Math.random() * (canvas.height - 240),
-  r: 26 + Math.random() * 82,
+  y: 24 + Math.random() * (canvas.height - 260),
+  r: 28 + Math.random() * 82,
   drift: 0.25 + Math.random() * 0.45,
   phase: index * 0.61 + Math.random(),
 }));
@@ -64,17 +69,26 @@ const REVEALABLE_TOTAL = [...INVITE_TEXT].reduce(
 
 const state = {
   clover: {
-    x: 94,
-    y: GROUND_TOP - CLOVER_RADIUS,
-    r: CLOVER_RADIUS,
+    x: canvas.width / 2,
+    y: PLAYER_Y,
+    r: 24,
+    vx: 0,
     vy: 0,
-    onGround: true,
+    rot: 0,
   },
-  pots: [],
+  beer: {
+    x: canvas.width / 2,
+    y: PLAYER_Y + 86,
+  },
+  trackCenterX: canvas.width / 2,
+  trackTargetX: canvas.width / 2,
+  turns: [],
   decorDrops: [],
   running: true,
   started: false,
+  falling: false,
   spawnTimer: 0,
+  nextTurnDelay: TURN_INTERVAL_MAX,
   decorTimer: 0,
   revealedCount: 0,
   passedCount: 0,
@@ -91,6 +105,12 @@ const musicState = {
   timerId: null,
 };
 
+let pointerStartX = null;
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
@@ -101,6 +121,7 @@ function midiToFrequency(midi) {
 
 function ensureMusicGraph() {
   if (musicState.context) return;
+
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return;
 
@@ -133,30 +154,23 @@ function scheduleTone(midi, startAt, duration, type, volume, lowpass = 2000) {
   osc.stop(startAt + duration + 0.04);
 }
 
-function playSfxJump() {
+function playSfxTurn() {
   if (!musicState.context) return;
   const now = musicState.context.currentTime;
-  scheduleTone(88, now, 0.12, "square", 0.13, 2800);
-  scheduleTone(93, now + 0.08, 0.12, "triangle", 0.08, 2400);
+  scheduleTone(90, now, 0.13, "triangle", 0.11, 2500);
+  scheduleTone(94, now + 0.06, 0.14, "square", 0.07, 2800);
 }
 
-function playSfxPass() {
+function playSfxMiss() {
   if (!musicState.context) return;
   const now = musicState.context.currentTime;
-  scheduleTone(91, now, 0.1, "triangle", 0.11, 2600);
-}
-
-function playSfxCrash() {
-  if (!musicState.context) return;
-  const now = musicState.context.currentTime;
-  scheduleTone(46, now, 0.2, "sawtooth", 0.14, 900);
+  scheduleTone(47, now, 0.2, "sawtooth", 0.15, 900);
 }
 
 function playSfxWin() {
   if (!musicState.context) return;
   const now = musicState.context.currentTime;
-  const notes = [84, 88, 91, 96];
-  notes.forEach((midi, index) => {
+  [84, 88, 91, 96].forEach((midi, index) => {
     scheduleTone(midi, now + index * 0.08, 0.22, "triangle", 0.1, 2600);
   });
 }
@@ -167,11 +181,11 @@ function scheduleFestiveLoop() {
   const lookAheadSeconds = 0.9;
   while (musicState.nextTime < musicState.context.currentTime + lookAheadSeconds) {
     const stepPattern = FESTIVE_PATTERN[musicState.step % FESTIVE_PATTERN.length];
-    scheduleTone(stepPattern.bass, musicState.nextTime, MUSIC_STEP_SECONDS * 0.88, "sine", 0.065, 950);
-    scheduleTone(stepPattern.lead, musicState.nextTime, MUSIC_STEP_SECONDS * 0.82, "triangle", 0.085, 1900);
+    scheduleTone(stepPattern.bass, musicState.nextTime, MUSIC_STEP_SECONDS * 0.88, "sine", 0.066, 960);
+    scheduleTone(stepPattern.lead, musicState.nextTime, MUSIC_STEP_SECONDS * 0.82, "triangle", 0.09, 1920);
 
     if (musicState.step % 2 === 0) {
-      scheduleTone(stepPattern.lead + 12, musicState.nextTime, MUSIC_STEP_SECONDS * 0.45, "square", 0.03, 3200);
+      scheduleTone(stepPattern.lead + 12, musicState.nextTime, MUSIC_STEP_SECONDS * 0.45, "square", 0.032, 3200);
     }
 
     musicState.step += 1;
@@ -186,7 +200,7 @@ function startFestiveMusic() {
   if (!musicState.context || !musicState.masterGain) return;
 
   if (musicState.context.state === "suspended") {
-    musicState.context.resume();
+    musicState.context.resume().catch(() => {});
   }
 
   if (musicState.started) return;
@@ -226,9 +240,9 @@ function createDecorDrop(forcedY = null) {
   const typeRoll = Math.random();
   let token;
 
-  if (typeRoll < 0.38) {
+  if (typeRoll < 0.4) {
     token = DECOR_EMOJIS[Math.floor(Math.random() * DECOR_EMOJIS.length)];
-  } else if (typeRoll < 0.66) {
+  } else if (typeRoll < 0.68) {
     token = LETTERS[Math.floor(Math.random() * LETTERS.length)];
   } else {
     token = NUMBERS[Math.floor(Math.random() * NUMBERS.length)];
@@ -247,14 +261,54 @@ function createDecorDrop(forcedY = null) {
   });
 }
 
-function spawnPot() {
-  const radius = randomBetween(POT_RADIUS_MIN, POT_RADIUS_MAX);
-  const y = GROUND_TOP - radius * 0.72;
-  state.pots.push({
-    x: canvas.width + radius + 18,
-    y,
-    r: radius,
-    passed: false,
+function resetGame() {
+  state.clover.x = canvas.width / 2;
+  state.clover.y = PLAYER_Y;
+  state.clover.vx = 0;
+  state.clover.vy = 0;
+  state.clover.rot = 0;
+
+  state.beer.x = canvas.width / 2;
+  state.beer.y = PLAYER_Y + 86;
+
+  state.trackCenterX = canvas.width / 2;
+  state.trackTargetX = canvas.width / 2;
+  state.turns = [];
+  state.decorDrops = [];
+  state.running = true;
+  state.started = false;
+  state.falling = false;
+  state.spawnTimer = 0;
+  state.nextTurnDelay = randomBetween(TURN_INTERVAL_MIN, TURN_INTERVAL_MAX);
+  state.decorTimer = 0;
+  state.revealedCount = 0;
+  state.passedCount = 0;
+  state.frameMs = performance.now();
+
+  for (let i = 0; i < DECOR_MAX; i += 1) {
+    createDecorDrop(randomBetween(-canvas.height, canvas.height));
+  }
+
+  overlay.classList.add("hidden");
+  tequilaRain.innerHTML = "";
+  winArt.classList.add("hidden");
+  restartButton.textContent = "Run Again";
+  updateHud();
+}
+
+function chooseNextTurnDirection() {
+  if (state.trackTargetX <= PATH_MARGIN + 18) return 1;
+  if (state.trackTargetX >= canvas.width - PATH_MARGIN - 18) return -1;
+  return Math.random() < 0.5 ? -1 : 1;
+}
+
+function spawnTurn() {
+  state.turns.push({
+    y: -90,
+    dir: chooseNextTurnDirection(),
+    centerX: state.trackTargetX,
+    resolved: false,
+    flash: 0,
   });
 }
 
@@ -265,13 +319,6 @@ function revealNextCharacter() {
   if (state.revealedCount >= REVEALABLE_TOTAL) {
     finishGame(true);
   }
-}
-
-function circleCircleCollision(x1, y1, r1, x2, y2, r2) {
-  const dx = x1 - x2;
-  const dy = y1 - y2;
-  const maxDistance = r1 + r2;
-  return dx * dx + dy * dy <= maxDistance * maxDistance;
 }
 
 function createTequilaRain() {
@@ -289,8 +336,10 @@ function createTequilaRain() {
 
 function finishGame(won) {
   if (!state.running) return;
+
   state.running = false;
   state.started = false;
+  state.falling = false;
   state.bestCount = Math.max(state.bestCount, state.passedCount);
   updateHud();
   overlay.classList.remove("hidden");
@@ -298,55 +347,66 @@ function finishGame(won) {
   if (won) {
     overlayTitle.textContent = "Congrats, Clover Runner!";
     overlayText.textContent = WIN_MESSAGE;
-    winArt.textContent = "🍀😊🏃";
+    winArt.textContent = "🍀🏃🌈";
     winArt.classList.remove("hidden");
-    restartButton.textContent = "Run Again";
+    restartButton.textContent = "Play Again";
     createTequilaRain();
     playSfxWin();
   } else {
-    overlayTitle.textContent = "You Hit a Pot of Gold";
-    overlayText.textContent = "Tap Try Again, then time each jump over the pots.";
+    overlayTitle.textContent = "You Fell Off the Path";
+    overlayText.textContent = "The pint was right behind you. Nail every turn to stay on track.";
     winArt.classList.add("hidden");
     tequilaRain.innerHTML = "";
     restartButton.textContent = "Try Again";
-    playSfxCrash();
   }
 }
 
-function jump() {
-  if (!state.running) return;
-  if (!state.started) state.started = true;
-  if (!state.clover.onGround) return;
-
-  state.clover.vy = JUMP_VELOCITY;
-  state.clover.onGround = false;
-  playSfxJump();
-}
-
-function resetGame() {
-  state.clover.x = 94;
-  state.clover.y = GROUND_TOP - state.clover.r;
-  state.clover.vy = 0;
-  state.clover.onGround = true;
-  state.pots = [];
-  state.decorDrops = [];
-  state.running = true;
+function startFall(direction) {
+  if (state.falling || !state.running) return;
+  state.falling = true;
   state.started = false;
-  state.spawnTimer = 0;
-  state.decorTimer = 0;
-  state.revealedCount = 0;
-  state.passedCount = 0;
-  state.frameMs = performance.now();
+  state.clover.vx = direction * randomBetween(150, 245) + randomBetween(-35, 35);
+  state.clover.vy = randomBetween(-120, -40);
+  playSfxMiss();
+}
 
-  for (let i = 0; i < DECOR_MAX; i += 1) {
-    createDecorDrop(randomBetween(-canvas.height, canvas.height));
+function resolveTurn(turn) {
+  if (turn.resolved) return;
+
+  turn.resolved = true;
+  turn.flash = 1;
+  state.passedCount += 1;
+  state.bestCount = Math.max(state.bestCount, state.passedCount);
+  state.trackTargetX = clamp(
+    state.trackTargetX + turn.dir * TRACK_SHIFT,
+    PATH_MARGIN,
+    canvas.width - PATH_MARGIN,
+  );
+  playSfxTurn();
+  revealNextCharacter();
+}
+
+function attemptTurn(direction) {
+  startFestiveMusic();
+  if (!state.running) return;
+
+  if (!state.started && !state.falling) {
+    state.started = true;
   }
 
-  overlay.classList.add("hidden");
-  tequilaRain.innerHTML = "";
-  winArt.classList.add("hidden");
-  restartButton.textContent = "Run Again";
-  updateHud();
+  if (state.falling) return;
+
+  const activeTurn = state.turns.find(
+    (turn) => !turn.resolved && turn.y >= TURN_ZONE_TOP && turn.y <= TURN_ZONE_BOTTOM,
+  );
+
+  if (!activeTurn) return;
+
+  if (activeTurn.dir === direction) {
+    resolveTurn(activeTurn);
+  } else {
+    startFall(direction);
+  }
 }
 
 function updateDecorDrops(dt) {
@@ -374,64 +434,73 @@ function update(dt) {
 
   if (!state.running) return;
 
-  if (!state.started) {
-    state.clover.y = GROUND_TOP - state.clover.r + Math.sin(state.frameMs / 280) * 2.3;
-    state.clover.vy = 0;
-    state.clover.onGround = true;
-    updateHud();
-    return;
-  }
+  state.beer.x += (state.clover.x - state.beer.x) * Math.min(1, dt * 4.8);
+  state.beer.y += (PLAYER_Y + 86 - state.beer.y) * Math.min(1, dt * 5.2);
+  state.beer.y += Math.sin(state.frameMs / 180) * 0.7;
 
-  const speed = Math.min(MAX_SPEED, BASE_SPEED + state.passedCount * 3.5);
+  if (state.falling) {
+    state.clover.vy += FALL_GRAVITY * dt;
+    state.clover.x += state.clover.vx * dt;
+    state.clover.y += state.clover.vy * dt;
+    state.clover.rot += FALL_SPIN * dt;
 
-  state.spawnTimer += dt;
-  const spawnEvery = Math.max(0.78, 1.26 - state.passedCount * 0.015);
-  while (state.spawnTimer >= spawnEvery) {
-    spawnPot();
-    state.spawnTimer -= spawnEvery;
-  }
+    state.beer.x += (state.clover.x - state.beer.x) * Math.min(1, dt * 2.4);
+    state.beer.y += (state.clover.y + 72 - state.beer.y) * Math.min(1, dt * 2.8);
 
-  state.clover.vy += GRAVITY * dt;
-  state.clover.y += state.clover.vy * dt;
-
-  const floorY = GROUND_TOP - state.clover.r;
-  if (state.clover.y >= floorY) {
-    state.clover.y = floorY;
-    state.clover.vy = 0;
-    state.clover.onGround = true;
-  } else {
-    state.clover.onGround = false;
-  }
-
-  for (let i = state.pots.length - 1; i >= 0; i -= 1) {
-    const pot = state.pots[i];
-    pot.x -= speed * dt;
-
-    const collided = circleCircleCollision(
-      state.clover.x,
-      state.clover.y + 2,
-      state.clover.r * 0.72,
-      pot.x,
-      pot.y - 2,
-      pot.r * 0.68,
-    );
-
-    if (collided) {
+    if (
+      state.clover.y > canvas.height + 90 ||
+      state.clover.x < -80 ||
+      state.clover.x > canvas.width + 80
+    ) {
       finishGame(false);
       return;
     }
 
-    if (!pot.passed && pot.x + pot.r < state.clover.x - state.clover.r * 0.65) {
-      pot.passed = true;
-      state.passedCount += 1;
-      state.bestCount = Math.max(state.bestCount, state.passedCount);
-      revealNextCharacter();
-      playSfxPass();
-      if (!state.running) return;
+    updateHud();
+    return;
+  }
+
+  if (!state.started) {
+    state.clover.x += (state.trackCenterX - state.clover.x) * Math.min(1, dt * 6);
+    state.clover.y = PLAYER_Y + Math.sin(state.frameMs / 240) * 1.7;
+    state.clover.rot = 0;
+    updateHud();
+    return;
+  }
+
+  const speed = Math.min(MAX_SPEED, BASE_SPEED + state.passedCount * 3.4);
+  state.trackCenterX += (state.trackTargetX - state.trackCenterX) * Math.min(1, dt * 3.9);
+  state.clover.x += (state.trackCenterX - state.clover.x) * Math.min(1, dt * 6.2);
+  state.clover.y = PLAYER_Y + Math.sin(state.frameMs / 95) * 0.8;
+  state.clover.rot = Math.sin(state.frameMs / 180) * 0.03;
+
+  state.spawnTimer += dt;
+  if (state.spawnTimer >= state.nextTurnDelay) {
+    spawnTurn();
+    state.spawnTimer = 0;
+    const speedTightening = state.passedCount * 0.01;
+    state.nextTurnDelay = clamp(
+      randomBetween(TURN_INTERVAL_MIN, TURN_INTERVAL_MAX) - speedTightening,
+      0.88,
+      TURN_INTERVAL_MAX,
+    );
+  }
+
+  for (let i = state.turns.length - 1; i >= 0; i -= 1) {
+    const turn = state.turns[i];
+    turn.y += speed * dt;
+
+    if (turn.flash > 0) {
+      turn.flash = Math.max(0, turn.flash - dt * 3);
     }
 
-    if (pot.x + pot.r < -18) {
-      state.pots.splice(i, 1);
+    if (!turn.resolved && turn.y > TURN_ZONE_BOTTOM) {
+      startFall(turn.dir);
+      break;
+    }
+
+    if (turn.y > canvas.height + 64) {
+      state.turns.splice(i, 1);
     }
   }
 
@@ -474,35 +543,47 @@ function drawBackground(nowMs) {
     const wobble = Math.sin(nowMs * 0.00135 + y * 0.018) * 4;
     ctx.fillRect(0, y + wobble, canvas.width, 1.2);
   }
-
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = '16px "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
-  for (let i = 0; i < 8; i += 1) {
-    const x = 34 + i * 42 + Math.sin(nowMs * 0.0008 + i) * 7;
-    const y = 84 + (i % 3) * 66 + Math.cos(nowMs * 0.0011 + i * 0.5) * 10;
-    ctx.globalAlpha = 0.11;
-    ctx.fillText("☘", x, y);
-  }
-  ctx.globalAlpha = 1;
 }
 
-function drawGround(nowMs) {
-  ctx.fillStyle = "#0a5526";
-  ctx.fillRect(0, GROUND_TOP, canvas.width, GROUND_HEIGHT);
+function drawTrack() {
+  const cx = state.trackCenterX;
+  const topY = 46;
+  const topWidth = PATH_WIDTH * 0.52;
+  const bottomWidth = PATH_WIDTH;
 
-  ctx.fillStyle = "#117537";
-  ctx.fillRect(0, GROUND_TOP + 8, canvas.width, 16);
+  ctx.fillStyle = "rgba(10, 28, 22, 0.5)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const stripeShift = (nowMs * 0.16) % 48;
-  for (let x = -48 + stripeShift; x < canvas.width + 60; x += 48) {
-    ctx.fillStyle = "rgba(39, 118, 58, 0.62)";
-    ctx.beginPath();
-    ctx.moveTo(x, GROUND_TOP + 1);
-    ctx.lineTo(x + 24, GROUND_TOP + 1);
-    ctx.lineTo(x + 12, GROUND_TOP + 22);
-    ctx.closePath();
-    ctx.fill();
+  const trackGradient = ctx.createLinearGradient(0, topY, 0, canvas.height);
+  trackGradient.addColorStop(0, "#324c40");
+  trackGradient.addColorStop(0.56, "#1f352d");
+  trackGradient.addColorStop(1, "#172923");
+  ctx.fillStyle = trackGradient;
+
+  ctx.beginPath();
+  ctx.moveTo(cx - topWidth / 2, topY);
+  ctx.lineTo(cx + topWidth / 2, topY);
+  ctx.lineTo(cx + bottomWidth / 2, canvas.height);
+  ctx.lineTo(cx - bottomWidth / 2, canvas.height);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "#f1cc6b";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - topWidth / 2, topY);
+  ctx.lineTo(cx - bottomWidth / 2, canvas.height);
+  ctx.moveTo(cx + topWidth / 2, topY);
+  ctx.lineTo(cx + bottomWidth / 2, canvas.height);
+  ctx.stroke();
+
+  const dashOffset = (state.frameMs * 0.28) % 58;
+  for (let y = topY + dashOffset; y < canvas.height; y += 58) {
+    const t = (y - topY) / (canvas.height - topY);
+    const dashW = 5 + t * 10;
+    const dashH = 10 + t * 18;
+    ctx.fillStyle = "rgba(255, 245, 207, 0.86)";
+    ctx.fillRect(cx - dashW / 2, y, dashW, dashH);
   }
 }
 
@@ -520,47 +601,67 @@ function drawDecorDrops() {
   }
 }
 
-function drawPotOfGold(pot) {
-  const potWidth = pot.r * 2.2;
-  const potHeight = pot.r * 1.25;
-  const left = pot.x - potWidth / 2;
-  const top = pot.y - potHeight / 2;
+function drawTurnMarker(turn) {
+  if (turn.y < -50 || turn.y > canvas.height + 30) return;
 
-  ctx.fillStyle = "#f7b500";
-  const coinCount = 7;
-  for (let i = 0; i < coinCount; i += 1) {
-    const coinX = left + 6 + i * (potWidth - 12) / (coinCount - 1);
-    const coinY = top + (i % 2 === 0 ? -5 : -2);
-    ctx.beginPath();
-    ctx.arc(coinX, coinY, 4.2, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const scale = clamp((turn.y - 40) / (PLAYER_Y - 40), 0.45, 1.2);
+  const markerW = 72 * scale;
+  const markerH = 34 * scale;
+  const arrow = turn.dir < 0 ? "←" : "→";
+  const x = turn.centerX;
+  const y = turn.y;
+  const glowAlpha = turn.flash > 0 ? 0.42 * turn.flash : 0.12;
 
-  const potGradient = ctx.createLinearGradient(left, top + 4, left + potWidth, top + potHeight);
-  potGradient.addColorStop(0, "#343a40");
-  potGradient.addColorStop(1, "#111318");
-  ctx.fillStyle = potGradient;
-  ctx.fillRect(left + 2, top + 4, potWidth - 4, potHeight - 6);
+  ctx.fillStyle = turn.dir < 0 ? "rgba(96, 206, 255, 0.76)" : "rgba(255, 208, 102, 0.78)";
+  ctx.fillRect(x - markerW / 2, y - markerH / 2, markerW, markerH);
 
-  ctx.fillStyle = "#4a5058";
-  ctx.fillRect(left + 6, top + 10, potWidth - 12, potHeight - 12);
-
-  ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-  ctx.fillRect(left + 5, top + 6, potWidth - 10, 2.5);
-
-  ctx.strokeStyle = "rgba(8, 14, 18, 0.64)";
+  ctx.strokeStyle = `rgba(255, 255, 255, ${0.35 + glowAlpha})`;
   ctx.lineWidth = 2;
-  ctx.strokeRect(left + 1.5, top + 3, potWidth - 3, potHeight - 5);
+  ctx.strokeRect(x - markerW / 2, y - markerH / 2, markerW, markerH);
+
+  ctx.fillStyle = "#0f1e1c";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `${16 * scale}px "Avenir Next", "Trebuchet MS", sans-serif`;
+  ctx.fillText(arrow, x, y);
 }
 
-function drawClover(nowMs) {
+function drawPintOfBeer() {
+  const x = state.beer.x;
+  const y = state.beer.y;
+  const width = 36;
+  const height = 50;
+  const left = x - width / 2;
+  const top = y - height / 2;
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.88)";
+  ctx.fillRect(left + 2, top, width - 4, 12);
+
+  const beerGradient = ctx.createLinearGradient(0, top + 8, 0, top + height);
+  beerGradient.addColorStop(0, "#f9d973");
+  beerGradient.addColorStop(0.45, "#e8a62d");
+  beerGradient.addColorStop(1, "#b46a18");
+  ctx.fillStyle = beerGradient;
+  ctx.fillRect(left + 2, top + 8, width - 4, height - 10);
+
+  ctx.strokeStyle = "rgba(230, 247, 255, 0.8)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(left + 1, top + 1, width - 2, height - 2);
+
+  ctx.strokeStyle = "rgba(229, 246, 255, 0.8)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(left + width + 3, top + 26, 9, -1.2, 1.2);
+  ctx.stroke();
+}
+
+function drawClover() {
   const clover = state.clover;
-  const runSwing = state.clover.onGround && state.started ? Math.sin(nowMs * 0.02) : 0;
-  const angle = state.clover.onGround ? runSwing * 0.1 : Math.max(-0.35, Math.min(0.28, clover.vy / 520));
+  const runSwing = !state.falling && state.started ? Math.sin(state.frameMs * 0.02) : 0;
 
   ctx.save();
   ctx.translate(clover.x, clover.y);
-  ctx.rotate(angle);
+  ctx.rotate(clover.rot);
 
   const leafRadius = clover.r * 0.58;
   const spread = clover.r * 0.55;
@@ -598,7 +699,7 @@ function drawClover(nowMs) {
   ctx.arc(0, 1.5, 7, 0.18, Math.PI - 0.18);
   ctx.stroke();
 
-  const legLift = state.clover.onGround && state.started ? Math.sin(nowMs * 0.03) * 4 : 0;
+  const legLift = runSwing * 4;
   ctx.strokeStyle = "#1f6a36";
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -612,33 +713,34 @@ function drawClover(nowMs) {
 }
 
 function drawStartPrompt() {
-  if (!state.running || state.started) return;
+  if (!state.running || state.started || state.falling) return;
 
   ctx.fillStyle = "rgba(10, 24, 26, 0.36)";
-  ctx.fillRect(32, canvas.height * 0.36, canvas.width - 64, 90);
+  ctx.fillRect(30, canvas.height * 0.36, canvas.width - 60, 92);
   ctx.strokeStyle = "rgba(250, 255, 235, 0.45)";
   ctx.lineWidth = 2;
-  ctx.strokeRect(32, canvas.height * 0.36, canvas.width - 64, 90);
+  ctx.strokeRect(30, canvas.height * 0.36, canvas.width - 60, 92);
 
   ctx.fillStyle = "#effff0";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = 'bold 22px "Avenir Next", "Trebuchet MS", sans-serif';
-  ctx.fillText("Tap To Run", canvas.width / 2, canvas.height * 0.41);
+  ctx.font = 'bold 21px "Avenir Next", "Trebuchet MS", sans-serif';
+  ctx.fillText("Swipe To Turn", canvas.width / 2, canvas.height * 0.41);
   ctx.font = '14px "Avenir Next", "Trebuchet MS", sans-serif';
-  ctx.fillText("Jump over every pot of gold to unlock the invite", canvas.width / 2, canvas.height * 0.456);
+  ctx.fillText("Each correct turn unlocks one letter", canvas.width / 2, canvas.height * 0.457);
 }
 
-function draw(nowMs) {
-  drawBackground(nowMs);
+function draw() {
+  drawBackground(state.frameMs);
+  drawTrack();
   drawDecorDrops();
-  drawGround(nowMs);
 
-  for (const pot of state.pots) {
-    drawPotOfGold(pot);
+  for (const turn of state.turns) {
+    drawTurnMarker(turn);
   }
 
-  drawClover(nowMs);
+  drawPintOfBeer();
+  drawClover();
   drawStartPrompt();
 
   if (!state.running) {
@@ -652,30 +754,89 @@ function loop(nowMs) {
   const dt = Math.min((nowMs - lastFrame) / 1000, 0.034);
   lastFrame = nowMs;
   update(dt);
-  draw(nowMs);
+  draw();
   requestAnimationFrame(loop);
 }
 
-function handlePrimaryInput(event) {
+function directionFromPointer(clientX, startX) {
+  const rect = canvas.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const deltaX = clientX - startX;
+
+  if (Math.abs(deltaX) >= 22) {
+    return deltaX < 0 ? -1 : 1;
+  }
+  return clientX < centerX ? -1 : 1;
+}
+
+function handlePrimaryDown(event) {
   event.preventDefault();
   startFestiveMusic();
-  jump();
+  if (event.pointerId !== undefined && canvas.setPointerCapture) {
+    canvas.setPointerCapture(event.pointerId);
+  }
+  pointerStartX = event.clientX;
+}
+
+function handlePrimaryUp(event) {
+  event.preventDefault();
+  const startX = pointerStartX ?? event.clientX;
+  pointerStartX = null;
+  const direction = directionFromPointer(event.clientX, startX);
+  attemptTurn(direction);
 }
 
 window.addEventListener("keydown", (event) => {
   if (event.repeat) return;
-  if (event.code === "Space" || event.key === "ArrowUp") {
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    attemptTurn(-1);
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    attemptTurn(1);
+  } else if (event.code === "Space" || event.key === "ArrowUp") {
     event.preventDefault();
     startFestiveMusic();
-    jump();
+    if (!state.started && !state.falling && state.running) {
+      state.started = true;
+    }
   }
 });
 
 if (window.PointerEvent) {
-  canvas.addEventListener("pointerdown", handlePrimaryInput);
+  canvas.addEventListener("pointerdown", handlePrimaryDown);
+  canvas.addEventListener("pointerup", handlePrimaryUp);
+  canvas.addEventListener("pointercancel", () => {
+    pointerStartX = null;
+  });
 } else {
-  canvas.addEventListener("mousedown", handlePrimaryInput);
-  canvas.addEventListener("touchstart", handlePrimaryInput, { passive: false });
+  canvas.addEventListener("mousedown", (event) => {
+    pointerStartX = event.clientX;
+    handlePrimaryUp(event);
+  });
+  canvas.addEventListener(
+    "touchstart",
+    (event) => {
+      const touch = event.touches[0];
+      if (!touch) return;
+      pointerStartX = touch.clientX;
+      startFestiveMusic();
+      event.preventDefault();
+    },
+    { passive: false },
+  );
+  canvas.addEventListener(
+    "touchend",
+    (event) => {
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      const direction = directionFromPointer(touch.clientX, pointerStartX ?? touch.clientX);
+      pointerStartX = null;
+      attemptTurn(direction);
+      event.preventDefault();
+    },
+    { passive: false },
+  );
 }
 
 restartButton.addEventListener("click", () => {
