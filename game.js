@@ -7,13 +7,21 @@ const PLAYER_Y = 488;
 const TRACK_SHIFT = 78;
 const TURN_ZONE_TOP = PLAYER_Y - 120;
 const TURN_ZONE_BOTTOM = PLAYER_Y + 26;
+const POT_ZONE_TOP = PLAYER_Y - 120;
+const POT_ZONE_BOTTOM = PLAYER_Y + 20;
+const POT_RADIUS = 18;
+const POT_JUMP_CLEARANCE = 24;
 
 const BASE_SPEED = 164;
 const MAX_SPEED = 260;
 const TURN_INTERVAL_MIN = 1.18;
 const TURN_INTERVAL_MAX = 1.9;
+const POT_INTERVAL_MIN = 1.45;
+const POT_INTERVAL_MAX = 2.45;
 const FALL_GRAVITY = 1680;
 const FALL_SPIN = 3.4;
+const JUMP_VELOCITY = 560;
+const JUMP_GRAVITY = 1550;
 
 const DECOR_MAX = 24;
 const DECOR_EMOJIS = ["🍀", "✨", "🌈", "🎶", "🎉", "💚", "🪙", "🥳"];
@@ -75,6 +83,8 @@ const state = {
     vx: 0,
     vy: 0,
     rot: 0,
+    jumpHeight: 0,
+    jumpVy: 0,
   },
   beer: {
     x: canvas.width / 2,
@@ -83,12 +93,15 @@ const state = {
   trackCenterX: canvas.width / 2,
   trackTargetX: canvas.width / 2,
   turns: [],
+  pots: [],
   decorDrops: [],
   running: true,
   started: false,
   falling: false,
   spawnTimer: 0,
   nextTurnDelay: TURN_INTERVAL_MAX,
+  potSpawnTimer: 0,
+  nextPotDelay: POT_INTERVAL_MAX,
   decorTimer: 0,
   revealedCount: 0,
   passedCount: 0,
@@ -106,6 +119,7 @@ const musicState = {
 };
 
 let pointerStartX = null;
+let pointerStartY = null;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -159,6 +173,19 @@ function playSfxTurn() {
   const now = musicState.context.currentTime;
   scheduleTone(90, now, 0.13, "triangle", 0.11, 2500);
   scheduleTone(94, now + 0.06, 0.14, "square", 0.07, 2800);
+}
+
+function playSfxJump() {
+  if (!musicState.context) return;
+  const now = musicState.context.currentTime;
+  scheduleTone(86, now, 0.1, "square", 0.11, 2600);
+  scheduleTone(90, now + 0.06, 0.1, "triangle", 0.07, 2800);
+}
+
+function playSfxPotClear() {
+  if (!musicState.context) return;
+  const now = musicState.context.currentTime;
+  scheduleTone(93, now, 0.09, "triangle", 0.09, 2600);
 }
 
 function playSfxMiss() {
@@ -267,6 +294,8 @@ function resetGame() {
   state.clover.vx = 0;
   state.clover.vy = 0;
   state.clover.rot = 0;
+  state.clover.jumpHeight = 0;
+  state.clover.jumpVy = 0;
 
   state.beer.x = canvas.width / 2;
   state.beer.y = PLAYER_Y + 86;
@@ -274,12 +303,15 @@ function resetGame() {
   state.trackCenterX = canvas.width / 2;
   state.trackTargetX = canvas.width / 2;
   state.turns = [];
+  state.pots = [];
   state.decorDrops = [];
   state.running = true;
   state.started = false;
   state.falling = false;
   state.spawnTimer = 0;
   state.nextTurnDelay = randomBetween(TURN_INTERVAL_MIN, TURN_INTERVAL_MAX);
+  state.potSpawnTimer = 0;
+  state.nextPotDelay = randomBetween(POT_INTERVAL_MIN, POT_INTERVAL_MAX);
   state.decorTimer = 0;
   state.revealedCount = 0;
   state.passedCount = 0;
@@ -309,6 +341,15 @@ function spawnTurn() {
     centerX: state.trackTargetX,
     resolved: false,
     flash: 0,
+  });
+}
+
+function spawnPot() {
+  state.pots.push({
+    y: -72,
+    x: state.trackTargetX + randomBetween(-18, 18),
+    r: POT_RADIUS,
+    passed: false,
   });
 }
 
@@ -409,6 +450,20 @@ function attemptTurn(direction) {
   }
 }
 
+function attemptJump() {
+  startFestiveMusic();
+  if (!state.running || state.falling) return;
+
+  if (!state.started) {
+    state.started = true;
+  }
+
+  if (state.clover.jumpHeight > 1) return;
+
+  state.clover.jumpVy = JUMP_VELOCITY;
+  playSfxJump();
+}
+
 function updateDecorDrops(dt) {
   state.decorTimer += dt;
   if (state.decorDrops.length < DECOR_MAX && state.decorTimer > 0.14) {
@@ -462,6 +517,8 @@ function update(dt) {
 
   if (!state.started) {
     state.clover.x += (state.trackCenterX - state.clover.x) * Math.min(1, dt * 6);
+    state.clover.jumpHeight = 0;
+    state.clover.jumpVy = 0;
     state.clover.y = PLAYER_Y + Math.sin(state.frameMs / 240) * 1.7;
     state.clover.rot = 0;
     updateHud();
@@ -471,8 +528,16 @@ function update(dt) {
   const speed = Math.min(MAX_SPEED, BASE_SPEED + state.passedCount * 3.4);
   state.trackCenterX += (state.trackTargetX - state.trackCenterX) * Math.min(1, dt * 3.9);
   state.clover.x += (state.trackCenterX - state.clover.x) * Math.min(1, dt * 6.2);
-  state.clover.y = PLAYER_Y + Math.sin(state.frameMs / 95) * 0.8;
-  state.clover.rot = Math.sin(state.frameMs / 180) * 0.03;
+  state.clover.jumpVy -= JUMP_GRAVITY * dt;
+  state.clover.jumpHeight = Math.max(0, state.clover.jumpHeight + state.clover.jumpVy * dt);
+  if (state.clover.jumpHeight <= 0) {
+    state.clover.jumpHeight = 0;
+    state.clover.jumpVy = 0;
+  }
+
+  const runBob = state.clover.jumpHeight <= 0.1 ? Math.sin(state.frameMs / 95) * 0.8 : 0;
+  state.clover.y = PLAYER_Y - state.clover.jumpHeight + runBob;
+  state.clover.rot = Math.sin(state.frameMs / 180) * 0.03 - state.clover.jumpVy * 0.00055;
 
   state.spawnTimer += dt;
   if (state.spawnTimer >= state.nextTurnDelay) {
@@ -484,6 +549,46 @@ function update(dt) {
       0.88,
       TURN_INTERVAL_MAX,
     );
+  }
+
+  state.potSpawnTimer += dt;
+  if (state.potSpawnTimer >= state.nextPotDelay) {
+    spawnPot();
+    state.potSpawnTimer = 0;
+    const speedTightening = state.passedCount * 0.01;
+    state.nextPotDelay = clamp(
+      randomBetween(POT_INTERVAL_MIN, POT_INTERVAL_MAX) - speedTightening,
+      0.95,
+      POT_INTERVAL_MAX,
+    );
+  }
+
+  for (let i = state.pots.length - 1; i >= 0; i -= 1) {
+    const pot = state.pots[i];
+    pot.y += speed * dt;
+    pot.x += (state.trackCenterX - pot.x) * Math.min(1, dt * 0.7);
+
+    const scale = clamp((pot.y - 50) / (PLAYER_Y - 50), 0.45, 1.25);
+    const radius = pot.r * scale;
+    const nearPlayer = Math.abs(pot.y - PLAYER_Y) < radius + 18;
+    const overlapping = Math.abs(pot.x - state.clover.x) < radius * 0.86;
+
+    if (!pot.passed && nearPlayer && overlapping) {
+      const needsClearance = POT_JUMP_CLEARANCE + radius * 0.3;
+      if (state.clover.jumpHeight < needsClearance) {
+        startFall(pot.x < state.clover.x ? -1 : 1);
+        break;
+      }
+    }
+
+    if (!pot.passed && pot.y > POT_ZONE_BOTTOM) {
+      pot.passed = true;
+      playSfxPotClear();
+    }
+
+    if (pot.y > canvas.height + 64) {
+      state.pots.splice(i, 1);
+    }
   }
 
   for (let i = state.turns.length - 1; i >= 0; i -= 1) {
@@ -601,6 +706,42 @@ function drawDecorDrops() {
   }
 }
 
+function drawRoadPot(pot) {
+  if (pot.y < -80 || pot.y > canvas.height + 80) return;
+
+  const scale = clamp((pot.y - 50) / (PLAYER_Y - 50), 0.45, 1.25);
+  const potWidth = pot.r * 2.2 * scale;
+  const potHeight = pot.r * 1.25 * scale;
+  const left = pot.x - potWidth / 2;
+  const top = pot.y - potHeight / 2;
+
+  ctx.fillStyle = "#f7b500";
+  const coinCount = 7;
+  for (let i = 0; i < coinCount; i += 1) {
+    const coinX = left + 6 + i * (potWidth - 12) / (coinCount - 1);
+    const coinY = top + (i % 2 === 0 ? -5 : -2) * scale;
+    ctx.beginPath();
+    ctx.arc(coinX, coinY, 3.7 * scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const potGradient = ctx.createLinearGradient(left, top + 4, left + potWidth, top + potHeight);
+  potGradient.addColorStop(0, "#343a40");
+  potGradient.addColorStop(1, "#111318");
+  ctx.fillStyle = potGradient;
+  ctx.fillRect(left + 2, top + 4, potWidth - 4, potHeight - 6);
+
+  ctx.fillStyle = "#4a5058";
+  ctx.fillRect(left + 6, top + 10, potWidth - 12, potHeight - 12);
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+  ctx.fillRect(left + 5, top + 6, potWidth - 10, 2.5);
+
+  ctx.strokeStyle = "rgba(8, 14, 18, 0.64)";
+  ctx.lineWidth = 1.8;
+  ctx.strokeRect(left + 1.5, top + 3, potWidth - 3, potHeight - 5);
+}
+
 function drawTurnMarker(turn) {
   if (turn.y < -50 || turn.y > canvas.height + 30) return;
 
@@ -657,7 +798,10 @@ function drawPintOfBeer() {
 
 function drawClover() {
   const clover = state.clover;
-  const runSwing = !state.falling && state.started ? Math.sin(state.frameMs * 0.02) : 0;
+  const runSwing =
+    !state.falling && state.started && state.clover.jumpHeight < 2
+      ? Math.sin(state.frameMs * 0.02)
+      : 0;
 
   ctx.save();
   ctx.translate(clover.x, clover.y);
@@ -725,15 +869,19 @@ function drawStartPrompt() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = 'bold 21px "Avenir Next", "Trebuchet MS", sans-serif';
-  ctx.fillText("Swipe To Turn", canvas.width / 2, canvas.height * 0.41);
+  ctx.fillText("Swipe To Turn + Jump", canvas.width / 2, canvas.height * 0.41);
   ctx.font = '14px "Avenir Next", "Trebuchet MS", sans-serif';
-  ctx.fillText("Each correct turn unlocks one letter", canvas.width / 2, canvas.height * 0.457);
+  ctx.fillText("Turn left/right, swipe up to jump pots", canvas.width / 2, canvas.height * 0.457);
 }
 
 function draw() {
   drawBackground(state.frameMs);
   drawTrack();
   drawDecorDrops();
+
+  for (const pot of state.pots) {
+    drawRoadPot(pot);
+  }
 
   for (const turn of state.turns) {
     drawTurnMarker(turn);
@@ -758,15 +906,20 @@ function loop(nowMs) {
   requestAnimationFrame(loop);
 }
 
-function directionFromPointer(clientX, startX) {
+function gestureFromPointer(clientX, clientY, startX, startY) {
   const rect = canvas.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
   const deltaX = clientX - startX;
+  const deltaY = clientY - startY;
+
+  if (deltaY <= -24 && Math.abs(deltaY) > Math.abs(deltaX)) {
+    return "jump";
+  }
 
   if (Math.abs(deltaX) >= 22) {
-    return deltaX < 0 ? -1 : 1;
+    return deltaX < 0 ? "left" : "right";
   }
-  return clientX < centerX ? -1 : 1;
+  return clientX < centerX ? "left" : "right";
 }
 
 function handlePrimaryDown(event) {
@@ -776,14 +929,21 @@ function handlePrimaryDown(event) {
     canvas.setPointerCapture(event.pointerId);
   }
   pointerStartX = event.clientX;
+  pointerStartY = event.clientY;
 }
 
 function handlePrimaryUp(event) {
   event.preventDefault();
   const startX = pointerStartX ?? event.clientX;
+  const startY = pointerStartY ?? event.clientY;
   pointerStartX = null;
-  const direction = directionFromPointer(event.clientX, startX);
-  attemptTurn(direction);
+  pointerStartY = null;
+  const gesture = gestureFromPointer(event.clientX, event.clientY, startX, startY);
+  if (gesture === "jump") {
+    attemptJump();
+  } else {
+    attemptTurn(gesture === "left" ? -1 : 1);
+  }
 }
 
 window.addEventListener("keydown", (event) => {
@@ -796,10 +956,7 @@ window.addEventListener("keydown", (event) => {
     attemptTurn(1);
   } else if (event.code === "Space" || event.key === "ArrowUp") {
     event.preventDefault();
-    startFestiveMusic();
-    if (!state.started && !state.falling && state.running) {
-      state.started = true;
-    }
+    attemptJump();
   }
 });
 
@@ -808,10 +965,12 @@ if (window.PointerEvent) {
   canvas.addEventListener("pointerup", handlePrimaryUp);
   canvas.addEventListener("pointercancel", () => {
     pointerStartX = null;
+    pointerStartY = null;
   });
 } else {
   canvas.addEventListener("mousedown", (event) => {
     pointerStartX = event.clientX;
+    pointerStartY = event.clientY;
     handlePrimaryUp(event);
   });
   canvas.addEventListener(
@@ -820,6 +979,7 @@ if (window.PointerEvent) {
       const touch = event.touches[0];
       if (!touch) return;
       pointerStartX = touch.clientX;
+      pointerStartY = touch.clientY;
       startFestiveMusic();
       event.preventDefault();
     },
@@ -830,9 +990,19 @@ if (window.PointerEvent) {
     (event) => {
       const touch = event.changedTouches[0];
       if (!touch) return;
-      const direction = directionFromPointer(touch.clientX, pointerStartX ?? touch.clientX);
+      const gesture = gestureFromPointer(
+        touch.clientX,
+        touch.clientY,
+        pointerStartX ?? touch.clientX,
+        pointerStartY ?? touch.clientY,
+      );
       pointerStartX = null;
-      attemptTurn(direction);
+      pointerStartY = null;
+      if (gesture === "jump") {
+        attemptJump();
+      } else {
+        attemptTurn(gesture === "left" ? -1 : 1);
+      }
       event.preventDefault();
     },
     { passive: false },
