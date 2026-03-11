@@ -328,7 +328,7 @@ function finishGame(won) {
 
   if (won) {
     overlayTitle.textContent = "Congrats, Clover Runner!";
-    overlayText.textContent = WIN_MESSAGE;
+    overlayText.textContent = `${WIN_MESSAGE} ${INVITE_TEXT}`;
     winArt.textContent = "🍀😊🏃";
     winArt.classList.remove("hidden");
     restartButton.textContent = "Run Again";
