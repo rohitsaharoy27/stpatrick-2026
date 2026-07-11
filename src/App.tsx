@@ -135,9 +135,9 @@ export default function App() {
     <main className="site-shell">
       <div className="paper-grain" aria-hidden="true" />
       <nav className="site-nav" aria-label="Game controls">
-        <button className="brand-lockup" onClick={() => setRestartOpen(true)} aria-label="Restart The Northeast Mystery Getaway">
+        <button className="brand-lockup" onClick={() => setRestartOpen(true)} aria-label="Restart Audree’s Northeast Mystery Getaway">
           <span className="brand-mark">✦</span>
-          <span>The Northeast<br />Mystery Getaway</span>
+          <span>Audree’s Northeast<br />Mystery Getaway</span>
         </button>
         {screen !== 'landing' && <button className="quiet-button" onClick={() => setRestartOpen(true)}>Restart game</button>}
       </nav>
@@ -183,7 +183,7 @@ function Landing({ onBegin }: { onBegin: () => void }) {
     <section className="landing layout-grid">
       <div className="landing-copy rise-in">
         <p className="eyebrow">A weekend dispatch · departing NYC</p>
-        <h1>The Northeast<br /><em>Mystery Getaway</em></h1>
+        <h1>Audree’s Northeast<br /><em>Mystery Getaway</em></h1>
         <p className="lede">We’re leaving from New York. Where are we going?</p>
         <p className="intro-copy">You’ll travel across the Northeast by answering trivia. Score at least 80% to unlock the mystery destination.</p>
         <button className="primary-button" onClick={onBegin}>Begin the Journey <span aria-hidden="true">→</span></button>
