@@ -1,43 +1,62 @@
-# 🍀 Lucky Drop Invite Game
+# The Northeast Mystery Getaway
 
-A lightweight mobile-friendly pixel-style game for your St. Patrick's Day party invite.
+A mobile-friendly, travel-poster-inspired trivia game. Start in New York City, answer regional trivia, and earn 12 of 14 correct answers to reveal a surprise weekend destination.
 
-Players catch falling letters to reveal `518 W 27th St`. They must catch one of each unique letter/number in the address before time runs out.
+## Game flow
 
-## How it works
+1. Landing screen with a stylized Northeast map and NYC departure point.
+2. Optional six-question PM practice warm-up. It is encouraging, score-free, and never affects the trip.
+3. Fourteen regional questions across seven states.
+4. A passing score unlocks the reveal and a two-day itinerary; otherwise players can retry either the full route or only missed questions.
 
-- Timer: 90 seconds
-- Falling tiles are random letters/numbers
-- Catching a needed character reveals all matching spots in the address
-- Win condition: reveal the full address before time runs out
-- Win screen includes a pot-of-gold celebration and tequila shots falling from the sky
+Regional progress is saved to browser local storage, so an accidental refresh keeps the current route.
 
-## Customize for your party
+## Screenshots
 
-Open `game.js` and update:
+Add screenshots here after deployment:
 
-- `ADDRESS` with your real party address
-- `TIME_LIMIT` for game length
+- Landing map
+- PM warm-up
+- Trivia route
+- Destination reveal
+- Weekend itinerary
 
-## Run locally
+## Local setup
 
-Because browsers block some local script behavior on `file://`, run a tiny static server:
+Requires Node.js 20.19+, 22.12+, or 24+.
 
 ```bash
-python3 -m http.server 8080
+npm install
+npm run dev
 ```
 
-Then open `http://localhost:8080`.
+Open the local URL printed by Vite. Useful commands:
 
-## Publish for free via GitHub Pages
+```bash
+npm test
+npm run build
+npm run preview
+```
 
-1. Push this repo to your GitHub account.
-2. In GitHub, open **Settings → Pages**.
-3. Under **Build and deployment**, choose:
-   - Source: **Deploy from a branch**
-   - Branch: **main** (or your default), folder: **/** (root)
-4. Save.
-5. GitHub will provide a URL like:
-   `https://<your-username>.github.io/<repo-name>/`
+## Editing the game
 
-Put that URL into your Partiful text blast.
+- PM practice questions live in `src/data/pmQuestions.ts`.
+- Regional trivia lives in `src/data/regionalQuestions.ts`.
+- The passing threshold and retry helpers are in `src/utils/scoring.ts`.
+- The hidden destination is configured in `src/config/destination.ts`.
+
+The city and state use character-code reconstruction as light spoiler deterrence. This only prevents casual source spoilers; it is not real security because browser-delivered code can always be inspected.
+
+## Accessibility
+
+The game uses semantic buttons, keyboard-operable answers, visible focus styles, live feedback, readable contrast, touch-sized controls, map text alternatives, and a reduced-motion mode.
+
+## GitHub Pages deployment
+
+The included workflow at `.github/workflows/deploy-pages.yml` tests, builds, and deploys on pushes to `main`.
+
+1. Push the repository to GitHub.
+2. In **Settings → Pages**, select **GitHub Actions** as the source.
+3. Push to `main` or run the workflow manually from the Actions tab.
+
+The workflow supplies `VITE_BASE_PATH=/<repository-name>/`, so Vite assets load correctly from a GitHub Pages repository subpath. For a custom local deployment path, set `VITE_BASE_PATH` before `npm run build`.
